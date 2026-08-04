@@ -1,3 +1,7 @@
-session Test_Generation = "Axiomatic_CyPhyCircus" +
+session Test_Generation = "CyPhyCircus_Toolkit" +
   options [document = false]
-  theories TestGen
+  theories
+    Ax_CyPhyCircus
+    CyPhy_Code
+    CyPhy_CodeGen
+    TestGen

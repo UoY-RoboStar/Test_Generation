@@ -1,0 +1,5 @@
+session "CyPhy_CodeGen_Test" = "Test_Generation" +
+  options [document = false]
+  theories
+    RescueDroneExampleRefinement
+    CyPhy_CodeGen_Test
