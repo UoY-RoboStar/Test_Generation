@@ -12,15 +12,24 @@ unbundle maplet_syntax
 axiomatization where
   cSync_mono [mono_rule]: "\<lbrakk> P\<^sub>1 \<le> P\<^sub>2 \<rbrakk> \<Longrightarrow> c \<rightarrow> P\<^sub>1 \<le> c \<rightarrow> P\<^sub>2" and
   cInput_mono [mono_rule]: "\<lbrakk>\<And>x. F\<^sub>1 x \<le> F\<^sub>2 x \<rbrakk> \<Longrightarrow> c'\<^bold>?x \<rightarrow> F\<^sub>1 x \<le> c'\<^bold>?x \<rightarrow> F\<^sub>2 x" and
-  cOutput_mono [mono_rule]: "\<lbrakk> P\<^sub>1 \<le> P\<^sub>2 \<rbrakk> \<Longrightarrow> c'\<^bold>!e \<rightarrow> P\<^sub>1 \<le> c'\<^bold>!e \<rightarrow> P\<^sub>2"
+  cOutput_mono [mono_rule]: "\<lbrakk> P\<^sub>1 \<le> P\<^sub>2 \<rbrakk> \<Longrightarrow> cOutputPrefix c' e P\<^sub>1 \<le> cOutputPrefix c' e P\<^sub>2"
+for c :: "unit \<Longrightarrow>\<^sub>\<triangle> 'e"
+and c' :: "'a \<Longrightarrow>\<^sub>\<triangle> 'e"
+and F\<^sub>1 F\<^sub>2 :: "'a \<Rightarrow> ('e, 's) cyphyaction"
+and P\<^sub>1 P\<^sub>2 :: "('e, 's) cyphyaction"
+and e :: "'s \<Rightarrow> 'a"
 
 section \<open>Miscellaneous Codegen Setup\<close>
+
+code_lazy_type itree
 
 lemma pfun_lookup_map_code [code]:
   "pfun_lookup (pfun_of_map f) k = f k"
   by auto
 
-code_lazy_type itree
+ML \<open>val rationalT = @{typ rational}\<close>
+ML \<open>val integerT = @{typ integer}\<close>
+
 
 code_printing
   type_constructor rational \<rightharpoonup> (SML) "Rat.rat"
@@ -28,39 +37,43 @@ code_printing
   | constant "0 :: rational" \<rightharpoonup> (SML) "(Rat.of'_int 0)"
   | constant "1 :: rational" \<rightharpoonup> (SML) "(Rat.of'_int 1)"
   | constant "Code_Rational.term_of_rational_inst.term_of_rational" \<rightharpoonup>
-    (SML) "(fn r => let val num = HOLogic.mk'_number HOLogic.intT (fst (Rat.dest r))
-                        val den = HOLogic.mk'_number HOLogic.intT (snd (Rat.dest r))
-                    in Const (\"Rat.Fract\", HOLogic.intT --> HOLogic.intT --> ratT) $ num $ den
+    (SML) "(fn r => let val num = HOLogic.mk'_number integerT (fst (Rat.dest r))
+                        val den = HOLogic.mk'_number integerT (snd (Rat.dest r))
+                        val pair = HOLogic.mk'_prod (num, den)
+                    in Const (\"Code'_Rational.Frct'_integer\",(HOLogic.mk'_prodT (integerT, integerT)) --> rationalT) $ pair
                     end)"
   | constant "Frct_integer" \<rightharpoonup> (SML) "Rat.make (_)"
   | constant "HOL.equal :: rational \<Rightarrow> rational \<Rightarrow> bool" \<rightharpoonup>
-    (SML) "(_) == (_)"
+    (SML) "(_) = (_)"
   |  constant "(<) :: rational \<Rightarrow> rational \<Rightarrow> bool" \<rightharpoonup>
-    (SML) "_ < _"
+    (SML) "Rat.lt (_) (_)"
   |  constant "(\<le>) :: rational \<Rightarrow> rational \<Rightarrow> bool" \<rightharpoonup>
-    (SML) "_ <= _"
+    (SML) "Rat.le (_) (_)"
   | constant "(+) :: rational \<Rightarrow> rational \<Rightarrow> rational" \<rightharpoonup>
-    (SML) "(_) + (_)"
+    (SML) "Rat.add (_) (_)"
   | constant "(-) :: rational \<Rightarrow> rational \<Rightarrow> rational" \<rightharpoonup>
-    (SML) "(_) - (_)"
+    (SML) "Rat.add (_) (Rat.neg (_))"
   | constant "(*) :: rational \<Rightarrow> rational \<Rightarrow> rational" \<rightharpoonup>
-    (SML) "(_) * (_)"
+    (SML) "Rat.mult (_) (_)"
   | constant "(/) :: rational \<Rightarrow> rational \<Rightarrow> rational" \<rightharpoonup>
-    (SML) "(_) '/ (_)"
+    (SML) "Rat.mult (_) (Rat.inv (_))"
+  | constant "inverse :: rational \<Rightarrow> rational" \<rightharpoonup>
+    (SML) "Rat.inv (_)"
  | constant "uminus :: rational \<Rightarrow> rational" \<rightharpoonup>
-    (SML) "Rat.neg"
+    (SML) "Rat.neg (_)"
 
 code_printing
   constant numerator \<rightharpoonup> (SML) "(fst o Rat.dest)"
   | constant denominator \<rightharpoonup> (SML) "(snd o Rat.dest)"
 
-code_printing
-  constant "integer_power" \<rightharpoonup> (SML) "realpow"
 
 ML \<open>fun digits_to_int [] = 0
       | digits_to_int (x :: xs) = 10 * (digits_to_int xs) + x\<close>
 ML \<open>fun intpow x n = if n <= 0 then 1 else x * (intpow x (n-1))\<close>
 ML \<open>fun realpow x n = if n <= 0 then 1.0 else x * (realpow x (n-1))\<close>
+
+(*code_printing
+  constant "integer_power" \<rightharpoonup> (SML) "realpow"*)
 
 ML \<open>fun term_of_real r =
       let
@@ -86,6 +99,8 @@ ML \<open>val set_real_float_printings =
           val times_const_pr = Code_Symbol.Constant (@{const_name Real.times_real_inst.times_real}, [("Eval", SOME (times_const))])
           val divide_const = Code_Printer.plain_const_syntax "curry Real./"
           val divide_const_pr = Code_Symbol.Constant (@{const_name Real.divide_real_inst.divide_real}, [("Eval", SOME (divide_const))])
+          val inverse_const = Code_Printer.plain_const_syntax "(curry Real./ (Real.fromInt 1))"
+          val inverse_const_pr = Code_Symbol.Constant (@{const_name Real.inverse_real_inst.inverse_real}, [("Eval", SOME (inverse_const))])
           val uminus_const = Code_Printer.plain_const_syntax "Real.~"
           val uminus_const_pr = Code_Symbol.Constant (@{const_name Real.uminus_real_inst.uminus_real}, [("Eval", SOME (uminus_const))])
           val zero_const = Code_Printer.plain_const_syntax "(Real.fromInt 0)"
@@ -96,7 +111,6 @@ ML \<open>val set_real_float_printings =
           val term_of_const_pr = Code_Symbol.Constant (@{const_name Real.term_of_real_inst.term_of_real}, [("Eval", SOME (term_of_const))])
           val printings = [
                 real_tyco_pr,
-                Ratreal_const_pr,
                 plus_const_pr,
                 minus_const_pr,
                 times_const_pr,
@@ -104,9 +118,30 @@ ML \<open>val set_real_float_printings =
                 zero_const_pr,
                 one_const_pr,
                 term_of_const_pr,
-                divide_const_pr
+                divide_const_pr,
+                inverse_const_pr
               ]
       in fold Code_Target.set_printings printings end\<close>
+
+lemma inverse_rat_of_rational [code]: 
+  "inverse (rat_of_rational x) = rat_of_rational (inverse x)"
+  by (transfer, simp)
+
+lemma integer_power_rat_of_rational [code]: 
+  "integer_power (rat_of_rational x) n = rat_of_rational (integer_power x n)"
+  unfolding integer_power_def by (transfer, simp)
+
+lemma integer_power_Ratreal [code]: 
+  "integer_power (Ratreal x) n = Ratreal (integer_power x n)"
+  unfolding integer_power_def by (transfer, simp add: of_rat_power)
+
+instantiation real :: default
+begin
+
+definition [code]: "default_real \<equiv> (0 :: real)"
+
+instance by intro_classes
+end
 
 
 section \<open>Expressing sets of CyPhyCircus behaviour traces as itrees\<close>
@@ -506,10 +541,10 @@ axiomatization
       (case StUpds_of P timestep len (tl branches) t s of
         (sts, ret) \<Rightarrow> (event_prefix_states len branches @ sts, ret))" and
   StUpds_of_InputPrefix[cyphycircus_htree_defs]:
-    "StUpds_of (c\<^bold>?x \<rightarrow> (F x)) timestep len branches t = (\<lambda>s.  
+    "StUpds_of (c\<^bold>?x \<rightarrow> (f x)) timestep len branches t = (\<lambda>s.  
       (case select_input_event c t (case_list 0 (\<lambda> x xs. x) branches) of 
         Some (a, t) \<Rightarrow>
-          (case StUpds_of (F a) timestep len (tl (tl branches)) t s of
+          (case StUpds_of (f a) timestep len (tl (tl branches)) t s of
             (sts, ret) \<Rightarrow> (event_prefix_states len (tl branches) @ sts, ret))
       | None \<Rightarrow> ([], s)))" and
   StUpds_of_OutputPrefix[cyphycircus_htree_defs]:
@@ -574,17 +609,15 @@ fun itree_has_trace :: "nat \<Rightarrow> nat \<Rightarrow> 's list \<Rightarrow
   (* Visible behaviour always has the empty trace without tick *)
   "itree_has_trace tau_bound choice_bound s [] False (Vis F) = Some True" |
   (* Visible behaviour only has the empty trace with tick if it is reached through some nondeterminism or timestep *)
-  "itree_has_trace tau_bound choice_bound s [] True (Vis F) = (
+  "itree_has_trace 0 choice_bound s [] True (Vis F) = None" |
+  "itree_has_trace (Suc tau_bound) choice_bound s [] True (Vis F) = (
         \<comment> \<open>try a timestep with the next state if there is one\<close>
     let can_check_timestep = pfun_lookup F Timestep;
         check_timestep = can_check_timestep \<bind>
             (\<lambda>P2. case P2 of
                 Vis F2 \<Rightarrow> (case s of
                     s0 # s' \<Rightarrow> (pfun_lookup F2 (StUpd s0)) \<bind>
-                        (\<lambda> P3. case tau_bound of
-                            0 \<Rightarrow> None
-                          | Suc bound \<Rightarrow> 
-                              itree_has_trace bound choice_bound s' [] True P3)
+                        (\<lambda> P3. itree_has_trace tau_bound choice_bound s' [] True P3)
                   | [] \<Rightarrow> None)
               | _ \<Rightarrow> None);
         \<comment> \<open>go through the nondeterminsims to see if any of them succeed\<close>
@@ -601,10 +634,7 @@ fun itree_has_trace :: "nat \<Rightarrow> nat \<Rightarrow> 's list \<Rightarrow
             (\<lambda> Ps. fold
               (combine_options disj)
               (map
-                (\<lambda>P. case tau_bound of
-                    0 \<Rightarrow> None
-                  | Suc bound \<Rightarrow>
-                      itree_has_trace bound choice_bound s [] True P)
+                (\<lambda>P. itree_has_trace tau_bound choice_bound s [] True P)
                 Ps)
               None)
     in case combine_options disj check_timestep check_nondets of
@@ -617,20 +647,18 @@ fun itree_has_trace :: "nat \<Rightarrow> nat \<Rightarrow> 's list \<Rightarrow
               \<comment> \<open>have other branches we can check, but they must have returned None\<close>
             | _ \<Rightarrow> None)
       | Some x \<Rightarrow> Some x)" |
-  "itree_has_trace tau_bound choice_bound s (e # t) has_tick (Vis F) = (
+  "itree_has_trace 0 choice_bound s (e # t) has_tick (Vis F) = None" |
+  "itree_has_trace (Suc tau_bound) choice_bound s (e # t) has_tick (Vis F) = (
      let check_event =
           (case pfun_lookup F (Event e) of 
             None \<Rightarrow> Some False
-          | Some P \<Rightarrow> itree_has_trace tau_bound choice_bound s t has_tick P);
+          | Some P \<Rightarrow> itree_has_trace (Suc tau_bound) choice_bound s t has_tick P);
         can_check_timestep = pfun_lookup F Timestep;
         check_timestep = can_check_timestep \<bind>
             (\<lambda>P2. case P2 of
                 Vis F2 \<Rightarrow> (case s of
                     s0 # s' \<Rightarrow> (pfun_lookup F2 (StUpd s0)) \<bind>
-                        (\<lambda> P3. case tau_bound of
-                            0 \<Rightarrow> None
-                          | Suc bound \<Rightarrow> 
-                              itree_has_trace bound choice_bound s' (e # t) has_tick P3)
+                        (\<lambda> P3. itree_has_trace tau_bound choice_bound s' (e # t) has_tick P3)
                   | [] \<Rightarrow> None)
               | _ \<Rightarrow> None);
         \<comment> \<open>go through the nondeterminsims to see if any of them succeed\<close>
@@ -647,10 +675,7 @@ fun itree_has_trace :: "nat \<Rightarrow> nat \<Rightarrow> 's list \<Rightarrow
             (\<lambda> Ps. fold
               (combine_options disj)
               (map
-                (\<lambda>P. case tau_bound of
-                    0 \<Rightarrow> None
-                  | Suc bound \<Rightarrow>
-                      itree_has_trace bound choice_bound s (e # t) has_tick P)
+                (\<lambda>P. itree_has_trace tau_bound choice_bound s (e # t) has_tick P)
                 Ps)
               None)
       in (case (check_event, combine_options disj check_timestep check_nondets) of
@@ -676,12 +701,11 @@ fun filter_options :: "'a option list \<Rightarrow> 'a list" where
 
 abbreviation "state_trace_of P timestep len branches t \<equiv> filter_options o fst o (StUpds_of P timestep len branches t)"
 
-
-definition "cyphycircus_itree_trace_ref_by P Q t has_tick st0 \<equiv> (\<forall> x y timestep_den len branches.
-  case (itree_has_trace x y (state_trace_of Q (1/timestep_den) len branches t st0) t has_tick
-          (htree_of Q (1/timestep_den) \<one>\<^sub>L st0),
-        itree_has_trace x y (state_trace_of P (1/timestep_den) len branches t st0) t has_tick
-          (htree_of P (1/timestep_den) \<one>\<^sub>L st0)) of
+definition "cyphycircus_itree_trace_ref_by P Q t has_tick timestep st0 \<equiv> (\<forall> x y len branches.
+  case (itree_has_trace x y (state_trace_of Q timestep len branches t st0) t has_tick
+          (htree_of Q timestep \<one>\<^sub>L st0),
+        itree_has_trace x y (state_trace_of P timestep len branches t st0) t has_tick
+          (htree_of P timestep \<one>\<^sub>L st0)) of
       (Some a, Some b) \<Rightarrow> implies a b
     | _ \<Rightarrow> True
       )"
@@ -694,24 +718,46 @@ chantype foo =
 
 alphabet bar =
   n :: nat
+  v :: real
+  time :: real
 
 record_default bar
 
-lemma test1: "cyphycircus_itree_trace_ref_by (a\<^bold>.1 \<rightarrow> a\<^bold>.2 \<rightarrow>  Skip) (a\<^bold>.1 \<rightarrow> a\<^bold>.0 \<rightarrow> Skip) t has_tick (default::bar)"
+lemma test1: "cyphycircus_itree_trace_ref_by (a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow>  Skip) (a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip) t has_tick 0.01 (default::bar)"
   apply (unfold cyphycircus_itree_trace_ref_by_def cyphycircus_htree_defs, safe)
   quickcheck
   oops
 
-recursive where "foo = b \<rightarrow> foo"
-
-lemma test2: "cyphycircus_itree_trace_ref_by (b \<rightarrow> Skip) foo t has_tick (default::bar)"
-  apply (unfold cyphycircus_htree_defs cyphycircus_itree_trace_ref_by_def
-          foo_def foo_rec_fun_def, safe)
+lemma test2: "cyphycircus_itree_trace_ref_by (a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip) (a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip) t has_tick 0.01 (default::bar)"
+  apply (unfold cyphycircus_itree_trace_ref_by_def cyphycircus_htree_defs, safe)
   quickcheck
   oops
 
-lemma test3: "cyphycircus_itree_trace_ref_by foo (b \<rightarrow> Skip) t has_tick (default::bar)"
+recursive where "baz = b \<rightarrow> baz"
+
+lemma test3: "cyphycircus_itree_trace_ref_by (b \<rightarrow> Skip) baz t has_tick 0.01 (default::bar)"
   apply (unfold cyphycircus_htree_defs cyphycircus_itree_trace_ref_by_def
-          foo_def foo_rec_fun_def, safe)
+          baz_def baz_rec_fun_def, safe)
   quickcheck
   oops
+
+lemma test4: "cyphycircus_itree_trace_ref_by baz (b \<rightarrow> Skip) t has_tick 0.01 (default::bar)"
+  apply (unfold cyphycircus_htree_defs cyphycircus_itree_trace_ref_by_def
+          baz_def baz_rec_fun_def, safe)
+  quickcheck
+  oops
+
+recursive where
+  "test5_cont =
+    (cEvolve (v +\<^sub>L time) (\<lambda>_. \<lparr>n\<^sub>v=0, v\<^sub>v=2, time\<^sub>v=1\<rparr>) (time < 1)\<^sub>e) ;; time := 0 ;;
+    a\<^bold>!(nat (floor v)) \<rightarrow> test5_cont"
+recursive where
+  "test5_discr = n := n+2 ;; a\<^bold>!n \<rightarrow> test5_discr"
+
+lemma test5: "cyphycircus_itree_trace_ref_by  test5_cont (a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip) t has_tick 0.1 (default::bar)"
+  apply (unfold cyphycircus_htree_defs cyphycircus_itree_trace_ref_by_def
+          test5_cont_def test5_cont_rec_fun_def test5_discr_def test5_discr_rec_fun_def, safe)
+  quickcheck
+  oops
+
+end
