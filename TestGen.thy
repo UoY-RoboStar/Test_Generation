@@ -1,5 +1,5 @@
 theory TestGen
-  imports Axiomatic_CyPhyCircus.Ax_CyPhyCircus
+  imports Axiomatic_CyPhyCircus.Ax_CyPhyCircus Codegen
   keywords "generate_tests_rct" :: thy_decl
     and "RoboChart" "Mutants" "RoboWorld" "Iterations"
 begin
@@ -8,9 +8,47 @@ named_theorems rct_defs (* define a theorem set for process definitions so unfol
 
 method rct_refine = (simp?, unfold rct_defs, rule ref_preorder.order_refl)
 method rct_refine_by_trace = fail
-method rct_simp_counterexample = clarsimp
+method rct_simp_counterexample =
+  (unfold cyphycircus_itree_trace_ref_by_def cyphycircus_htree_defs recursive_defs rec_sys_defs rct_defs, safe)
 
-ML \<open>fun obtainCounterexample ctxt goal = (SOME [], ctxt)\<close>
+ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
+      let val spec_type = Term.fastype_of spec
+          val type_error = TYPE ("type of specification and implementation must be cyphyaction:",[spec_type],[spec, impl])
+          val (evT, stT) =
+            case dest_Type spec_type of
+                (ty_name, evT :: stT :: _) =>
+                  if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
+              | _ => raise type_error
+          val cyphycircus_itree_trace_ref_by = Const (@{const_name cyphycircus_itree_trace_ref_by},
+                spec_type --> spec_type --> (HOLogic.listT evT) --> HOLogic.boolT --> HOLogic.realT --> stT --> HOLogic.boolT)
+          val term = cyphycircus_itree_trace_ref_by
+                      $ spec
+                      $ impl
+                      $ (Free ("trace", HOLogic.listT evT))
+                      $ (Free ("has_tick", HOLogic.boolT))
+                      $ @{term "0.01 :: real"}
+                      $ (Const (@{const_name default}, stT))
+          val state = Proof.theorem NONE (K I) [[(HOLogic.mk_Trueprop term, [])]] ctxt
+          val rct_simp_counterexample =  Method.method (Proof.context_of state) (Token.make_src (@{method "rct_simp_counterexample"}, Position.start) [])
+          val states = Proof.apply (Method.Basic rct_simp_counterexample, Position.no_range) state
+          val state = case Seq.pull states of
+                        SOME (Seq.Result state, _) => state
+                      | SOME (Seq.Error err, _) => 
+                          (* an error occurred, report it *)
+                          let val _ = warning (err ())
+                          in state (* rollback the state to try to apply quickcheck without simplifying *)
+                          end
+                      | NONE => state (* rollback the state to try to apply quickcheck without simplifying *)
+          val find_trace = List.find (fn (var, _) => var = "trace")
+      in
+        case Quickcheck.quickcheck [] 1 state of
+             NONE => NONE
+          |  SOME (is_genuine, insts) => 
+                if is_genuine then
+                  Option.map (HOLogic.dest_list o snd) (find_trace insts)
+                else
+                  NONE
+      end\<close>
 
 ML \<open>fun term_to_name ctxt term =
       let val text = XML.content_of (YXML.parse_body (Syntax.string_of_term ctxt term))
@@ -26,12 +64,15 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
       let val spec_type = Term.fastype_of spec
           val ref_by = Const (@{const_name ref_by}, spec_type --> spec_type --> @{typ bool})
           val statement = Thm.cterm_of ctxt (HOLogic.mk_Trueprop (ref_by $ spec $ impl))
-          val goal = Goal.init  statement
+          val goal = Goal.init statement
           val rct_refine = Method.method ctxt (Token.make_src (@{method rct_refine}, Position.start) [])
           val goal_seq = rct_refine ctxt [] (ctxt, goal)
       in case Seq.pull goal_seq of
-            NONE => (* proof method failed, try to construct counterexample *) obtainCounterexample ctxt goal |>> SOME
-          | SOME (Seq.Result (ctxt, goal), _) => (* proof method succeeded, do we have a finished goal? *)
+            NONE =>
+              (* proof method failed, try to construct counterexample *)
+              (SOME (obtainCounterexample ctxt spec impl), ctxt)
+          | SOME (Seq.Result (ctxt, goal), _) =>
+              (* proof method succeeded, do we have a finished goal? *)
               if Thm.no_prems goal then
                 (* This looks like a finished goal, convert it to a finished theorem and save it *)
                 let val finished_goal = Goal.finish ctxt goal
@@ -41,10 +82,17 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
                     val binding = Binding.name name
                     val ((bound_name, _), ctxt) = Local_Theory.note ((binding, []), [finished_goal]) ctxt
                 in (NONE, ctxt) end
-              else (* proof method didn't finish the proof, try to construct counterexample *) (NONE, ctxt)
-          | SOME (Seq.Error err, _) => let val _ = warning (err ()) in obtainCounterexample ctxt goal |>> SOME end
+              else
+                (* proof method didn't finish the proof, try to construct counterexample *)
+                (SOME (obtainCounterexample ctxt spec impl), ctxt)
+          | SOME (Seq.Error err, _) =>
+              (* an error occurred, report it and try to construct counterexample *)
+              let val _ = warning (err ())
+              in (SOME (obtainCounterexample ctxt spec impl), ctxt)
+              end
       end
 \<close>
+term "\<mu> X. F X"
 
 ML \<open>fun checkTraceOf ctxt (impl : term) (trace : term list)  = (NONE, ctxt)\<close>
 
