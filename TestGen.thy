@@ -9,8 +9,9 @@ named_theorems rct_defs (* define a theorem set for process definitions so unfol
 method rct_refine = (simp?, unfold rct_defs, rule ref_preorder.order_refl)
 method rct_refine_by_trace = fail
 method rct_simp_counterexample =
-  (unfold cyphycircus_itree_trace_ref_by_def cyphycircus_htree_defs recursive_defs rec_sys_defs rct_defs, safe)
+  (unfold cyphycircus_trace_ref_by_def recursive_defs rec_sys_defs rct_defs, safe)
 
+ML \<open>Thm.cterm_of @{context} (Const (@{const_name default}, HOLogic.natT))\<close>
 ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
       let val spec_type = Term.fastype_of spec
           val type_error = TYPE ("type of specification and implementation must be cyphyaction:",[spec_type],[spec, impl])
@@ -19,35 +20,13 @@ ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
                 (ty_name, evT :: stT :: _) =>
                   if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
               | _ => raise type_error
-          val cyphycircus_itree_trace_ref_by = Const (@{const_name cyphycircus_itree_trace_ref_by},
-                spec_type --> spec_type --> (HOLogic.listT evT) --> HOLogic.boolT --> HOLogic.realT --> stT --> HOLogic.boolT)
-          val term = cyphycircus_itree_trace_ref_by
-                      $ spec
-                      $ impl
-                      $ (Free ("trace", HOLogic.listT evT))
-                      $ (Free ("has_tick", HOLogic.boolT))
-                      $ @{term "0.01 :: real"}
-                      $ (Const (@{const_name default}, stT))
-          val state = Proof.theorem NONE (K I) [[(HOLogic.mk_Trueprop term, [])]] ctxt
-          val rct_simp_counterexample =  Method.method (Proof.context_of state) (Token.make_src (@{method "rct_simp_counterexample"}, Position.start) [])
-          val states = Proof.apply (Method.Basic rct_simp_counterexample, Position.no_range) state
-          val state = case Seq.pull states of
-                        SOME (Seq.Result state, _) => state
-                      | SOME (Seq.Error err, _) => 
-                          (* an error occurred, report it *)
-                          let val _ = warning (err ())
-                          in state (* rollback the state to try to apply quickcheck without simplifying *)
-                          end
-                      | NONE => state (* rollback the state to try to apply quickcheck without simplifying *)
-          val find_trace = List.find (fn (var, _) => var = "trace")
+          val check_result_no_tick = 
+            check_cyphycircus_trace_prefix_ref_by ctxt stT evT
+              10(*breadth*) 5(*depth*) 1000(*step limit*) 100(*timestep denominator*) false spec impl
       in
-        case Quickcheck.quickcheck [] 1 state of
-             NONE => NONE
-          |  SOME (is_genuine, insts) => 
-                if is_genuine then
-                  Option.map (HOLogic.dest_list o snd) (find_trace insts)
-                else
-                  NONE
+        case check_result_no_tick of
+            SOME (SOME terms) => SOME terms
+          | _ => NONE    
       end\<close>
 
 ML \<open>fun term_to_name ctxt term =
@@ -92,7 +71,6 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
               end
       end
 \<close>
-term "\<mu> X. F X"
 
 ML \<open>fun checkTraceOf ctxt (impl : term) (trace : term list)  = (NONE, ctxt)\<close>
 

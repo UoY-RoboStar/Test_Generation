@@ -399,7 +399,7 @@ definition "cyphycircus_trace_ref_by step_limit ts s t has_tick P Q \<equiv>
 fun cyphycircus_trace_prefix_ref_by where
   "cyphycircus_trace_prefix_ref_by step_limit ts s t has_tick P Q term_limit (n::nat) =
     (if n = 0 then
-      Some (True, [])
+      None
     else
           case full_exhaustive_class.full_exhaustive 
             (\<lambda> (e,term). case (cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s P, cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s Q) of
@@ -426,7 +426,7 @@ val trace_eval_cookie = (Trace_Evaluation.get, Trace_Evaluation.put, "Trace_Eval
 
 definition [code]: "code_real_inv k \<equiv> Ratreal (rat_of_rational (Frct_integer (1, integer_of_nat k)))"
 term "map_option snd"
-ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl   = 
+ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl = 
   let val actT = Type (@{type_name cyphyaction}, [evT, stT])
       val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
       val cyphycircus_trace_prefix_ref_by = Const (@{const_name cyphycircus_trace_prefix_ref_by},
