@@ -213,18 +213,18 @@ axiomatization
     "step_cyphyaction timestep [] s (cSyncPrefix e P) = None" and
   step_cyphyaction_cSyncPrefix2[code]: (* check if event is correct, also allow time to pass if event is correct *)
     "step_cyphyaction timestep (te#t) s (cSyncPrefix e P)
-      = (if te = build\<^bsub>e\<^esub> () then Some [EventStep te t P, Timestep s False (cSyncPrefix e P)] else None)" and
+      = (if te = build\<^bsub>e\<^esub> () then Some [EventStep te t P, Timestep s False (cSyncPrefix e P)] else Some [])" and
   step_cyphyaction_cOutputPrefix'1[code]: (* no event means checking fails *)
     "step_cyphyaction timestep [] s (cOutputPrefix' chexpr P) = None" and
   step_cyphyaction_cOutputPrefix'2[code]: (* check if event is correct, also allow time to pass if event is correct *)
     "step_cyphyaction timestep (te#t) s (cOutputPrefix' chexpr P)
-      = (if chexpr s = te then Some [EventStep te t P, Timestep s False (cOutputPrefix' chexpr P)] else None)" and
+      = (if chexpr s = te then Some [EventStep te t P, Timestep s False (cOutputPrefix' chexpr P)] else Some [])" and
   step_cyphyaction_cInputPrefix'1[code]: (* no event means checking fails *)
     "step_cyphyaction timestep [] s (cInputPrefix' F) = None" and
   step_cyphyaction_cInputPrefix'2[code]: (* check if event is correct, also allow time to pass if event is correct *)
     "step_cyphyaction timestep (te#t) s (cInputPrefix' F)
       = (case F te of
-          None \<Rightarrow> None \<comment> \<open>event not valid, checking fails\<close>
+          None \<Rightarrow> Some [] \<comment> \<open>event not valid, deadlock\<close>
         | Some (pred, P) \<Rightarrow> \<comment> \<open>event is valid, but is the predicate true?\<close>
             if pred s then
               Some [EventStep te t P, Timestep s False (cInputPrefix' F)]
@@ -318,73 +318,71 @@ axiomatization
             | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
   step_cyphyaction_cRec'[code]: (* unroll the loop at least enough to match the trace *)
     "step_cyphyaction timestep t s (cRec' FF)
-      = step_cyphyaction timestep t s (FF (length t))"
+      = step_cyphyaction timestep t s (FF (1 + length t))"
 
 lemma step_cyphyaction_cSkip[code]:
     "step_cyphyaction timestep t s cSkip = Some [Termination s]"
   unfolding cSkip_def step_cyphyaction_cAssigns by simp
 
-term List.filter
-
-fun cyphyaction_has_trace :: "nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> bool option" and
-    check_cyphysteps :: "nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> bool option \<Rightarrow> ('e, 's) cyphystep list \<Rightarrow> bool option" where
+fun cyphyaction_has_trace :: "nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" and
+    check_cyphysteps :: "('e, 's) cyphyaction \<Rightarrow> nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option \<Rightarrow> ('e, 's) cyphystep list \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" where
   "cyphyaction_has_trace limit ts t has_tick s P = 
     (if limit = 0 then
       None
     else
       case (t, has_tick) of
-        ([], False) \<Rightarrow> Some True
+        ([], False) \<Rightarrow> Some (Some (s, Some P))
       | ([], True) \<Rightarrow> (step_cyphyaction ts [] s P) \<bind> 
-        (\<lambda> steps. if List.null steps then Some False else  check_cyphysteps (limit-1) ts [] True s None steps)
+        (\<lambda> steps. if List.null steps then Some None else  check_cyphysteps P (limit-1) ts [] True s None steps)
       | ((e#t), has_tick) \<Rightarrow> (step_cyphyaction ts (e#t) s P) \<bind>
-        (\<lambda>steps. if List.null steps then Some False else check_cyphysteps (limit-1) ts (e#t) has_tick s None steps))"
-| "check_cyphysteps limit ts t has_tick s r [] = r"
+        (\<lambda>steps. if List.null steps then Some None else check_cyphysteps P (limit-1) ts (e#t) has_tick s None steps))"
+| "check_cyphysteps P limit ts t has_tick s r [] = r"
   (* every process has the empty trace *)
-| "check_cyphysteps limit ts [] False s r steps = Some True"
+| "check_cyphysteps P limit ts [] False s r steps = Some (Some (s, Some P))"
   (* a process has a tick if it has some termination step *)
-| "check_cyphysteps limit ts [] True s r (Termination s' # steps) = Some True"
+| "check_cyphysteps P limit ts [] True s r (Termination s' # steps) = Some (Some (s', None))"
   (* a process has a tick if it has a tick after a state update *)
-| "check_cyphysteps limit ts [] True s r (StUpd s' P' # steps) =
+| "check_cyphysteps P limit ts [] True s r (StUpd s' P' # steps) =
     (case cyphyaction_has_trace limit ts [] True s' P' of
-      Some True \<Rightarrow> Some True
-    | Some False \<Rightarrow> check_cyphysteps limit ts [] True s (Some False) steps
-    | None \<Rightarrow> check_cyphysteps limit ts [] True s r steps)"
+      Some (Some (s', P')) \<Rightarrow> Some (Some (s', P'))
+    | Some None \<Rightarrow> check_cyphysteps P limit ts [] True s (Some None) steps
+    | None \<Rightarrow> check_cyphysteps P limit ts [] True s r steps)"
   (* a process has a tick if it has a tick after a (strict) timestep *)
-| "check_cyphysteps limit ts [] True s r (Timestep s' True P' # steps) =
+| "check_cyphysteps P limit ts [] True s r (Timestep s' True P' # steps) =
     (case cyphyaction_has_trace limit ts [] True s' P' of
-      Some True \<Rightarrow> Some True
-    | Some False \<Rightarrow> check_cyphysteps limit ts [] True s (Some False) steps
-    | None \<Rightarrow> check_cyphysteps limit ts [] True s r steps)"
+      Some (Some (s', P')) \<Rightarrow> Some (Some (s', P'))
+    | Some None \<Rightarrow> check_cyphysteps P limit ts [] True s (Some None) steps
+    | None \<Rightarrow> check_cyphysteps P limit ts [] True s r steps)"
   (* a non-strict timestep is ignored, but never propagates a None *)
-| "check_cyphysteps limit ts [] True s r (Timestep s' False P' # steps) =
-    check_cyphysteps limit ts [] True s (combine_options disj (Some False) r) steps"
+| "check_cyphysteps P limit ts [] True s r (Timestep s' False P' # steps) =
+    check_cyphysteps P limit ts [] True s (combine_options (combine_options (\<lambda> x y. y)) (Some None) r) steps"
   (* a process can't have just a tick when a event step happens *)
-| "check_cyphysteps limit ts [] True s r (EventStep e t' P' # steps) =
-    check_cyphysteps limit ts [] True s (Some False) steps"
+| "check_cyphysteps P limit ts [] True s r (EventStep e t' P' # steps) =
+    check_cyphysteps P limit ts [] True s (Some None) steps"
   (* a process that can terminate doesn't necessarily have a non-empty trace *)
-| "check_cyphysteps limit ts (e#t) has_tick s r (Termination s' # steps) =
-    check_cyphysteps limit ts (e#t) has_tick s (Some False) steps"
+| "check_cyphysteps P limit ts (e#t) has_tick s r (Termination s' # steps) =
+    check_cyphysteps P limit ts (e#t) has_tick s (Some None) steps"
   (* a process has a non-empty trace if it has it after a state update *)
-| "check_cyphysteps limit ts (e#t) has_tick s r (StUpd s' P' # steps) =
+| "check_cyphysteps P limit ts (e#t) has_tick s r (StUpd s' P' # steps) =
     (case cyphyaction_has_trace limit ts (e#t) has_tick s' P' of
-      Some True \<Rightarrow> Some True
-    | Some False \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s (Some False) steps
-    | None \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s r steps)"
+      Some (Some (s', P')) \<Rightarrow> Some (Some (s', P'))
+    | Some None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s (Some None) steps
+    | None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s r steps)"
   (* a process has a non-empty trace if it has it after a (strict) timestep *)
-| "check_cyphysteps limit ts (e#t) has_tick s r (Timestep s' True P' # steps) =
+| "check_cyphysteps P limit ts (e#t) has_tick s r (Timestep s' True P' # steps) =
     (case cyphyaction_has_trace limit ts (e#t) has_tick s' P' of
-      Some True \<Rightarrow> Some True
-    | Some False \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s (Some False) steps
-    | None \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s r steps)"
+      Some (Some (s', P')) \<Rightarrow> Some (Some (s', P'))
+    | Some None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s (Some None) steps
+    | None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s r steps)"
   (* a non-strict timestep is ignored, but never propagates a none *)
-| "check_cyphysteps limit ts (e#t) has_tick s r (Timestep s' False P' # steps) =
-    check_cyphysteps limit ts (e#t) has_tick s (combine_options disj (Some False) r) steps"
+| "check_cyphysteps P limit ts (e#t) has_tick s r (Timestep s' False P' # steps) =
+    check_cyphysteps P limit ts (e#t) has_tick s (combine_options (combine_options (\<lambda> x y. y)) (Some None) r) steps"
   (* a process has a non-empty trace if it has the rest of it after an event *)
-| "check_cyphysteps limit ts (e#t) has_tick s r (EventStep e' t' P' # steps) =
+| "check_cyphysteps P limit ts (e#t) has_tick s r (EventStep e' t' P' # steps) =
     (case cyphyaction_has_trace limit ts t' has_tick s P' of
-      Some True \<Rightarrow> Some True
-    | Some False \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s (Some False) steps
-    | None \<Rightarrow> check_cyphysteps limit ts (e#t) has_tick s r steps)"
+      Some (Some (s', P')) \<Rightarrow> Some (Some (s', P'))
+    | Some None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s (Some None) steps
+    | None \<Rightarrow> check_cyphysteps P limit ts (e#t) has_tick s r steps)"
 
 fun filter_options :: "'a option list \<Rightarrow> 'a list" where
   "filter_options [] = []" |
@@ -393,7 +391,10 @@ fun filter_options :: "'a option list \<Rightarrow> 'a list" where
 
 definition "cyphycircus_trace_ref_by step_limit ts s t has_tick P Q \<equiv>
   (case (cyphyaction_has_trace step_limit ts t has_tick s Q, cyphyaction_has_trace step_limit ts t has_tick s P) of
-    (Some a, Some b) \<Rightarrow> implies a b
+    (Some (Some _), Some (Some _)) \<Rightarrow> True
+  | (Some (Some _), Some None) \<Rightarrow> False
+  | (Some None, Some (Some _)) \<Rightarrow> True
+  | (Some None, Some None) \<Rightarrow> True
   | _ \<Rightarrow> True)"
 
 fun cyphycircus_trace_prefix_ref_by where
@@ -403,11 +404,38 @@ fun cyphycircus_trace_prefix_ref_by where
     else
           case full_exhaustive_class.full_exhaustive 
             (\<lambda> (e,term). case (cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s P, cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s Q) of
-                (Some False, Some False) \<Rightarrow> None \<comment> \<open>no point continuing if the prefix fails\<close>
-              | (Some False, Some True) \<Rightarrow> Some (has_tick, [term ()] ) \<comment> \<open>counterexample found\<close>
-              | (Some True, Some False) \<Rightarrow> None \<comment> \<open>Q is allowed to omit some traces of P, no point continuing if the prefix fails\<close>
-              | (Some True, Some True) \<Rightarrow> \<comment> \<open>continue to see if there is a trace P might fail on\<close>
+                (Some None, Some None) \<Rightarrow> None \<comment> \<open>no point continuing if the prefix fails\<close>
+              | (Some None, Some (Some _)) \<Rightarrow> Some (has_tick, [term ()] ) \<comment> \<open>counterexample found\<close>
+              | (Some (Some _), Some None) \<Rightarrow> None \<comment> \<open>Q is allowed to omit some traces of P, no point continuing if the prefix fails\<close>
+              | (Some (Some _), Some (Some _)) \<Rightarrow> \<comment> \<open>continue to see if there is a trace P might fail on\<close>
                   (case cyphycircus_trace_prefix_ref_by step_limit ts s (t @ [e] ) has_tick P Q term_limit (n-1) of 
+                    Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
+                  | _ \<Rightarrow> None)
+              | _ \<Rightarrow> None) (natural_of_nat term_limit) of 
+                  Some (b, terms) \<Rightarrow> Some (b, terms)
+                | None \<Rightarrow> None)"
+
+
+
+fun cyphycircus_trace_incremental_ref_by where
+  "cyphycircus_trace_incremental_ref_by step_limit ts s1 s2 has_tick P Q term_limit (n::nat) =
+    (if n = 0 then
+      None
+    else
+          case full_exhaustive_class.full_exhaustive 
+            (\<lambda> (e,term). case (cyphyaction_has_trace step_limit ts [e] has_tick s1 P, cyphyaction_has_trace step_limit ts [e] has_tick s2 Q) of
+                (Some None, Some None) \<Rightarrow> None \<comment> \<open>no point continuing if the prefix fails\<close>
+              | (Some None, Some (Some _)) \<Rightarrow> Some (has_tick, [term ()] ) \<comment> \<open>counterexample found\<close>
+              | (Some (Some _), Some None) \<Rightarrow> None \<comment> \<open>Q is allowed to omit some traces of P, no point continuing if the prefix fails\<close>
+              | (Some (Some (s1', None)), Some (Some (s2', None))) \<Rightarrow> None
+              | (Some (Some (s1', Some _)), Some (Some (s2', None))) \<Rightarrow> None
+              | (Some (Some (s1', None)), Some (Some (s2', Some Q'))) \<Rightarrow> 
+                  \<comment> \<open>P terminated but Q might do further events (yielding a counterexample), continue with Stop\<close>
+                  (case cyphycircus_trace_incremental_ref_by step_limit ts s1' s2' has_tick cStop Q' term_limit (n-1) of 
+                    Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
+                  | _ \<Rightarrow> None)
+              | (Some (Some (s1', Some P')), Some (Some (s2', Some Q'))) \<Rightarrow> \<comment> \<open>continue to see if there is a trace P might fail on\<close>
+                  (case cyphycircus_trace_incremental_ref_by step_limit ts s1' s2' has_tick P' Q' term_limit (n-1) of 
                     Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
                   | _ \<Rightarrow> None)
               | _ \<Rightarrow> None) (natural_of_nat term_limit) of 
@@ -451,6 +479,32 @@ ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth s
   in Code_Runtime.dynamic_value trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
+term cyphycircus_trace_incremental_ref_by
+ML \<open>fun check_cyphycircus_trace_incremental_ref_by ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl = 
+  let val actT = Type (@{type_name cyphyaction}, [evT, stT])
+      val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
+      val cyphycircus_trace_incremental_ref_by = Const (@{const_name cyphycircus_trace_incremental_ref_by},
+                HOLogic.natT --> HOLogic.realT --> stT --> stT --> HOLogic.boolT
+                  --> actT --> actT --> HOLogic.natT --> HOLogic.natT --> resT)
+      val map_option = Const (@{const_name map_option},
+        (HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT) --> HOLogic.listT HOLogic.termT)
+          --> resT
+          --> Type (@{type_name option}, [HOLogic.listT HOLogic.termT]))
+      val unpack_result = map_option
+        $ Const (@{const_name snd}, HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT) --> HOLogic.listT HOLogic.termT)
+      val term = cyphycircus_trace_incremental_ref_by
+                  $ (HOLogic.mk_nat step_limit)
+                  $ (@{term "code_real_inv"} $ (HOLogic.mk_nat timestep_den))
+                  $ (Const (@{const_name default}, stT)) (* initial state for P *)
+                  $ (Const (@{const_name default}, stT)) (* initial state for Q *)
+                  $ (if has_tick then @{term True} else @{term False})
+                  $ spec
+                  $ impl
+                  $ (HOLogic.mk_nat breadth)
+                  $ (HOLogic.mk_nat depth)
+  in Code_Runtime.dynamic_value trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
+  end\<close>
+
 section \<open>testing the codegen\<close>
 
 
@@ -479,6 +533,13 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"})
     end\<close>
 
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
 lemma test2: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
     (a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip) (a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip)"
   apply (unfold cyphycircus_trace_ref_by_def, safe)
@@ -488,6 +549,13 @@ lemma test2: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
     in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"})
     end\<close>
@@ -507,6 +575,12 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"}))
     end\<close>
 
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"}))
+    end\<close>
 
 lemma test4: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
     baz (b \<rightarrow> Skip)"
@@ -517,6 +591,13 @@ lemma test4: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
     in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})
+      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})
       @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"})
     end\<close>
@@ -542,6 +623,13 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
       @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
     end\<close>
 
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      (@{term "test5_cont :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
 lemma test5': "cyphycircus_trace_ref_by 10 (code_real_inv 1000) (default::bar) t has_tick
     test5_cont (a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip)"
   apply (unfold cyphycircus_trace_ref_by_def
@@ -552,6 +640,13 @@ lemma test5': "cyphycircus_trace_ref_by 10 (code_real_inv 1000) (default::bar) t
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
     in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
+      (@{term "test5_cont :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
     end\<close>

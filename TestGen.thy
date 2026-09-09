@@ -21,7 +21,7 @@ ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
                   if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
               | _ => raise type_error
           val check_result_no_tick = 
-            check_cyphycircus_trace_prefix_ref_by ctxt stT evT
+            check_cyphycircus_trace_incremental_ref_by ctxt stT evT
               10(*breadth*) 5(*depth*) 1000(*step limit*) 100(*timestep denominator*) false spec impl
       in
         case check_result_no_tick of
