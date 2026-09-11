@@ -11,8 +11,7 @@ method rct_refine_by_trace = fail
 method rct_simp_counterexample =
   (unfold cyphycircus_trace_ref_by_def recursive_defs rec_sys_defs rct_defs, safe)
 
-ML \<open>Thm.cterm_of @{context} (Const (@{const_name default}, HOLogic.natT))\<close>
-ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
+ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
       let val spec_type = Term.fastype_of spec
           val type_error = TYPE ("type of specification and implementation must be cyphyaction:",[spec_type],[spec, impl])
           val (evT, stT) =
@@ -28,6 +27,10 @@ ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) =
             SOME (SOME terms) => SOME terms
           | _ => NONE    
       end\<close>
+
+ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) = 
+      Timeout.apply (Time.fromSeconds 3) (obtainCounterexample' ctxt spec impl) ()
+      handle Timeout.TIMEOUT _ => NONE\<close>
 
 ML \<open>fun term_to_name ctxt term =
       let val text = XML.content_of (YXML.parse_body (Syntax.string_of_term ctxt term))

@@ -741,11 +741,6 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
     end\<close>
-syntax foo :: svids
-syntax_types svids
-term "cHide P s"
-term "0\<^sub>L"
-term "Skip \<lbrakk> \<^bold>0 |\<lbrace>b\<rbrace>| \<^bold>0 \<rbrakk> Skip"
 
 lemma test6: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
     (((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace>) (a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip)"
