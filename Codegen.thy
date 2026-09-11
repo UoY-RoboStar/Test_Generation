@@ -2,6 +2,7 @@ theory Codegen
   imports Axiomatic_CyPhyCircus.Ax_CyPhyCircus
     "ITree_Simulation.Code_Target_Rational" Interaction_Trees.ITree_Extraction
     "HOL-Library.Multiset" "Framed_ODEs.Framed_ODEs" (*"HOL-Library.Code_Real_Approx_By_Float"*)
+    "HOL-Library.AList"
 begin
 
 unbundle Circus_Syntax
@@ -163,7 +164,8 @@ axiomatization
   cInputPrefix' :: "('e \<Rightarrow> (('s \<Rightarrow> \<bool>) \<times> ('e, 's) cyphyaction) option) \<Rightarrow> ('e, 's) cyphyaction" and
   cOutputPrefix' :: "('s \<Rightarrow> 'e) \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction" and
   cParallelAct' :: "('s \<Rightarrow> 's \<Rightarrow> 's \<Rightarrow> 's) \<Rightarrow> 'e set \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction" and
-  cRec' :: "(nat \<Rightarrow> ('e, 's) cyphyaction) \<Rightarrow> ('e, 's) cyphyaction"
+  cRec' :: "(nat \<Rightarrow> ('e, 's) cyphyaction) \<Rightarrow> ('e, 's) cyphyaction" and
+  cRename' :: "('e \<leftrightarrow> 'e) \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
 where
   cEvolve_cEvolve'[code_unfold]:
     "cEvolve v f p \<equiv> cEvolve' (\<lambda>r s. put\<^bsub>v\<^esub> s (RKstep (\<lambda>x. get\<^bsub>v\<^esub> (f (put\<^bsub>v\<^esub> s x))) r (get\<^bsub>v\<^esub> s))) p" and
@@ -174,7 +176,9 @@ where
   cParallelAct_cParallelAct'[code_unfold]:
     "cParallelAct ns1 ns2 cs P Q \<equiv> cParallelAct' (\<lambda> s0 s1 s2. s0 \<triangleleft>\<^bsub>ns1\<^esub> s1 \<triangleleft>\<^bsub>ns2\<^esub> s2) cs P Q" and
   nu_cRec'[code_unfold]:
-    "\<nu> FF \<equiv> cRec' (\<lambda>n. Nat.funpow n FF cChaos)"
+    "\<nu> FF \<equiv> cRec' (\<lambda>n. Nat.funpow n FF cChaos)" and
+  cRename_cRename'[code_unfold]:
+    "cRename rel P = cRename' rel P"
 for v :: "'b :: real_normed_vector \<Longrightarrow> 's"
 and f :: "'s \<Rightarrow> 's"
 and p :: "'s \<Rightarrow> bool"
@@ -184,18 +188,30 @@ lemmas cyphyaction_datatype_unfolds =
 
 code_datatype cSkip cAssigns cStop cChaos cAssume cEvolve' cSyncPrefix cOutputPrefix' cInputPrefix'
   cSeq cGuard cCond "inf :: ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
-  cExtChoice cParallelAct' cRec'
+  cExtChoice cParallelAct' cRec' cHide cRename'
 
 section \<open>Operational semantics for trace checking\<close>
+
+datatype 'e visibility = Visible 'e | Hidden nat 'e
 
 datatype ('e, 's) cyphystep =
   Termination 's
   | Timestep 's bool "('e, 's) cyphyaction"
   | StUpd 's "('e, 's) cyphyaction"
-  | EventStep  'e "'e list" "('e, 's) cyphyaction"
+  | EventStep  "'e visibility" "'e visibility list" "('e, 's) cyphyaction"
+
+fun map_cyphystep_continuation :: "(('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction) \<Rightarrow> ('e, 's) cyphystep \<Rightarrow> ('e, 's) cyphystep" where
+  "map_cyphystep_continuation f (Termination s) = Termination s"
+| "map_cyphystep_continuation f (Timestep s b P) = Timestep s b (f P)"
+| "map_cyphystep_continuation f (StUpd s P) = StUpd s (f P)"
+| "map_cyphystep_continuation f (EventStep e t P) = EventStep e t (f P)"
+
+fun rapply_alist :: "('a \<times> 'b) list \<Rightarrow> 'b \<Rightarrow> 'a list" where
+  "rapply_alist [] b = []"
+| "rapply_alist ((x, y) # xs) b = (if b = y then [x] else []) @ rapply_alist xs b"
 
 axiomatization
-  step_cyphyaction :: "real \<Rightarrow> 'e list \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphystep list option"
+  step_cyphyaction :: "real \<Rightarrow> 'e visibility list \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphystep list option"
   where
   step_cyphyaction_cAssigns[code]: (* terminate immediately with updated state *)
     "step_cyphyaction timestep t s (cAssigns subst) = Some [Termination (subst s)]" and
@@ -212,24 +228,30 @@ axiomatization
   step_cyphyaction_cSyncPrefix1[code]: (* no event means checking fails *)
     "step_cyphyaction timestep [] s (cSyncPrefix e P) = None" and
   step_cyphyaction_cSyncPrefix2[code]: (* check if event is correct, also allow time to pass if event is correct *)
-    "step_cyphyaction timestep (te#t) s (cSyncPrefix e P)
-      = (if te = build\<^bsub>e\<^esub> () then Some [EventStep te t P, Timestep s False (cSyncPrefix e P)] else Some [])" and
+    "step_cyphyaction timestep (Visible te # t) s (cSyncPrefix e P)
+      = (if te = build\<^bsub>e\<^esub> () then Some [EventStep (Visible te) t P, Timestep s False (cSyncPrefix e P)] else Some [])" and
+  step_cyphyaction_cSyncPrefix3[code]: (* an event prefixing can't produce a hidden event *)
+    "step_cyphyaction timestep (Hidden depth te # t) s (cSyncPrefix e P) = Some []" and
   step_cyphyaction_cOutputPrefix'1[code]: (* no event means checking fails *)
     "step_cyphyaction timestep [] s (cOutputPrefix' chexpr P) = None" and
   step_cyphyaction_cOutputPrefix'2[code]: (* check if event is correct, also allow time to pass if event is correct *)
-    "step_cyphyaction timestep (te#t) s (cOutputPrefix' chexpr P)
-      = (if chexpr s = te then Some [EventStep te t P, Timestep s False (cOutputPrefix' chexpr P)] else Some [])" and
+    "step_cyphyaction timestep (Visible te # t) s (cOutputPrefix' chexpr P)
+      = (if chexpr s = te then Some [EventStep (Visible te) t P, Timestep s False (cOutputPrefix' chexpr P)] else Some [])" and
+  step_cyphyaction_cOutputPrefix'3[code]: (* an output prefixing can't produce a hidden event *)
+    "step_cyphyaction timestep (Hidden depth te # t) s (cOutputPrefix' chexpr P) = Some []" and
   step_cyphyaction_cInputPrefix'1[code]: (* no event means checking fails *)
     "step_cyphyaction timestep [] s (cInputPrefix' F) = None" and
   step_cyphyaction_cInputPrefix'2[code]: (* check if event is correct, also allow time to pass if event is correct *)
-    "step_cyphyaction timestep (te#t) s (cInputPrefix' F)
+    "step_cyphyaction timestep (Visible te # t) s (cInputPrefix' F)
       = (case F te of
           None \<Rightarrow> Some [] \<comment> \<open>event not valid, deadlock\<close>
         | Some (pred, P) \<Rightarrow> \<comment> \<open>event is valid, but is the predicate true?\<close>
             if pred s then
-              Some [EventStep te t P, Timestep s False (cInputPrefix' F)]
+              Some [EventStep (Visible te) t P, Timestep s False (cInputPrefix' F)]
             else
               Some [Timestep s False (cInputPrefix' F)] \<comment> \<open> we can wait until the predicate is true \<close> )" and
+  step_cyphyaction_cInputPrefix'3[code]: (* input prefixing cannot produce a hidden event *)
+    "step_cyphyaction timestep (Hidden depth te # t) s (cInputPrefix' F) = Some []" and
   step_cyphyaction_cSeq[code]: (* try the first, then proceed to the second after termination *)
     "step_cyphyaction timestep t s (cSeq P Q) =
       (case (step_cyphyaction timestep t s P) of
@@ -272,10 +294,10 @@ axiomatization
         | (None, Some ys) \<Rightarrow> Some ys
         | (Some xs, None) \<Rightarrow> Some xs
         | (None, None) \<Rightarrow> None)" and
-  step_cyphyaction_cParallelAct'[code]: (* synchronise timesteps, events in syncset, and termination *)
+  step_cyphyaction_cParallelAct'[code]: (* synchronise timesteps, (visible) events in syncset, and termination *)
     "step_cyphyaction timestep t s (cParallelAct' mrg cs P Q)
       = (let is_timestep = (\<lambda> step. case step of Timestep _ _ _ \<Rightarrow> True | _ \<Rightarrow> False);
-            is_sync_event = (\<lambda> step. case step of EventStep e _ _ \<Rightarrow> e \<in> cs | _ \<Rightarrow> False);
+            is_sync_event = (\<lambda> step. case step of EventStep (Visible e) _ _ \<Rightarrow> e \<in> cs | _ \<Rightarrow> False);
             is_termination = (\<lambda> step. case step of Termination _ \<Rightarrow> True | _ \<Rightarrow> False)
         in case (step_cyphyaction timestep t s P, step_cyphyaction timestep t s Q) of
               (Some xs, Some ys) \<Rightarrow>
@@ -318,14 +340,63 @@ axiomatization
             | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
   step_cyphyaction_cRec'[code]: (* unroll the loop at least enough to match the trace *)
     "step_cyphyaction timestep t s (cRec' FF)
-      = step_cyphyaction timestep t s (FF (1 + length t))"
+      = step_cyphyaction timestep t s (FF (1 + length t))" and
+  step_cyphyaction_cHide1[code]: (* if there are no events in the trace, just ignore hiding *)
+    "step_cyphyaction timestep [] s (cHide P S)
+      = map_option (map (map_cyphystep_continuation (\<lambda>P. cHide P S))) (step_cyphyaction timestep [] s P)" and
+  step_cyphyaction_cHide2[code]: (* visible events in the hidden set can't happen under the hiding *)
+    "step_cyphyaction timestep (Visible te # t) s (cHide P S)
+      = (if te \<in> S then 
+          Some []
+        else
+          map_option (map (map_cyphystep_continuation (\<lambda>P. cHide P S))) (step_cyphyaction timestep (Visible te # t) s P))" and
+  step_cyphyaction_cHide3[code]: (* hidden events in the hidden set are made visible - if they occur they need to be hidden again *)
+    "step_cyphyaction timestep (Hidden depth te # t) s (cHide P S)
+      = (if te \<in> S then
+          case depth of
+            0 \<Rightarrow>
+                map_option
+                  (map (\<lambda>x. case x of
+                      EventStep (Visible te) t P \<Rightarrow> EventStep (Hidden 0 te) t (cHide P S)
+                    | step \<Rightarrow> map_cyphystep_continuation (\<lambda>P. cHide P S) step))
+                  (step_cyphyaction timestep (Visible te # t) s P)
+          | Suc depth \<Rightarrow> 
+                map_option
+                  (map (\<lambda>x. case x of
+                      EventStep (Hidden depth te) t P \<Rightarrow> EventStep (Hidden (Suc depth) te) t (cHide P S)
+                    | step \<Rightarrow> map_cyphystep_continuation (\<lambda>P. cHide P S)step))
+                  (step_cyphyaction timestep (Hidden depth te # t) s P)
+        else
+          map_option (map (map_cyphystep_continuation (\<lambda>P. cHide P S))) (step_cyphyaction timestep (Hidden depth te # t) s P))" and
+  step_cyphyaction_cRename'1[code]: (* if there are no events in the trace, just ignore renaming *)
+    "step_cyphyaction timestep [] s (cRename' (rel::'e \<leftrightarrow> 'e) P)
+      = map_option (map (map_cyphystep_continuation (cRename' rel))) (step_cyphyaction timestep [] s P)" and
+  step_cyphyaction_cRename'2[code]: (* a hidden event can't be renamed *)
+    "step_cyphyaction timestep (Hidden depth te # t) s (cRename' (rel::'e \<leftrightarrow> 'e) P)
+      = map_option (map (map_cyphystep_continuation (cRename' rel))) (step_cyphyaction timestep (Hidden depth te # t) s P)" and
+  step_cyphyaction_cRename'3[code]: (* a visible event is reverse-renamed and then renamed back in the result *)
+    "step_cyphyaction timestep (Visible te # t) s (cRename' (set alist :: 'e \<leftrightarrow> 'e) P)
+      = (if list_ex ((=) te o snd) alist then
+          fold (combine_options (@))
+            (map 
+              (\<lambda> te'. 
+                map_option
+                  (map (\<lambda> step.
+                    case step of 
+                      EventStep (Visible e) t P \<Rightarrow> EventStep (Visible te) t (cRename' (set alist) P)
+                    | step \<Rightarrow> map_cyphystep_continuation (cRename' (set alist)) step))
+                  (step_cyphyaction timestep (Visible te' # t) s P))
+              (rapply_alist alist te))
+            None
+        else
+          map_option (map (map_cyphystep_continuation (cRename' (set alist)))) (step_cyphyaction timestep (Visible te # t) s P))"
 
 lemma step_cyphyaction_cSkip[code]:
     "step_cyphyaction timestep t s cSkip = Some [Termination s]"
   unfolding cSkip_def step_cyphyaction_cAssigns by simp
 
-fun cyphyaction_has_trace :: "nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" and
-    check_cyphysteps :: "('e, 's) cyphyaction \<Rightarrow> nat \<Rightarrow> real \<Rightarrow> 'e list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option \<Rightarrow> ('e, 's) cyphystep list \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" where
+fun cyphyaction_has_trace :: "nat \<Rightarrow> real \<Rightarrow> 'e visibility list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" and
+    check_cyphysteps :: "('e, 's) cyphyaction \<Rightarrow> nat \<Rightarrow> real \<Rightarrow> 'e visibility list \<Rightarrow> bool \<Rightarrow> 's \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option \<Rightarrow> ('e, 's) cyphystep list \<Rightarrow> ('s \<times> ('e, 's) cyphyaction option) option option" where
   "cyphyaction_has_trace limit ts t has_tick s P = 
     (if limit = 0 then
       None
@@ -389,31 +460,43 @@ fun filter_options :: "'a option list \<Rightarrow> 'a list" where
   "filter_options (None # xs) = filter_options xs" |
   "filter_options (Some x # xs) = x # filter_options xs"
 
-definition "cyphycircus_trace_ref_by step_limit ts s t has_tick P Q \<equiv>
-  (case (cyphyaction_has_trace step_limit ts t has_tick s Q, cyphyaction_has_trace step_limit ts t has_tick s P) of
+definition cyphycircus_trace_ref_by :: "\<nat> \<Rightarrow> \<real> \<Rightarrow> 's \<Rightarrow> 'e list \<Rightarrow> \<bool> \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> \<bool>" where
+ "cyphycircus_trace_ref_by step_limit ts s t has_tick P Q \<equiv>
+  (case (cyphyaction_has_trace step_limit ts (map Visible t) has_tick s Q, cyphyaction_has_trace step_limit ts (map Visible t) has_tick s P) of
     (Some (Some _), Some (Some _)) \<Rightarrow> True
   | (Some (Some _), Some None) \<Rightarrow> False
   | (Some None, Some (Some _)) \<Rightarrow> True
   | (Some None, Some None) \<Rightarrow> True
   | _ \<Rightarrow> True)"
 
-fun cyphycircus_trace_prefix_ref_by where
+find_consts "term \<Rightarrow> bool"
+term term_of_class.term_of
+
+
+fun cyphycircus_trace_prefix_ref_by 
+    :: "\<nat> \<Rightarrow> \<real> \<Rightarrow> 's \<Rightarrow> ('e::full_exhaustive) visibility list \<Rightarrow> \<bool>
+      \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> \<nat> \<Rightarrow> \<nat> \<Rightarrow> (\<bool> \<times> term list) option" where
   "cyphycircus_trace_prefix_ref_by step_limit ts s t has_tick P Q term_limit (n::nat) =
     (if n = 0 then
       None
     else
-          case full_exhaustive_class.full_exhaustive 
+          full_exhaustive_class.full_exhaustive 
             (\<lambda> (e,term). case (cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s P, cyphyaction_has_trace step_limit ts (t @ [e] ) has_tick s Q) of
                 (Some None, Some None) \<Rightarrow> None \<comment> \<open>no point continuing if the prefix fails\<close>
-              | (Some None, Some (Some _)) \<Rightarrow> Some (has_tick, [term ()] ) \<comment> \<open>counterexample found\<close>
+              | (Some None, Some (Some _)) \<Rightarrow> \<comment> \<open>counterexample found\<close>
+                  (case e of
+                    Visible e \<Rightarrow> Some (has_tick, [term_of_class.term_of e] )
+                  | _ \<Rightarrow> None) \<comment> \<open>can't have a hidden error event\<close>
               | (Some (Some _), Some None) \<Rightarrow> None \<comment> \<open>Q is allowed to omit some traces of P, no point continuing if the prefix fails\<close>
               | (Some (Some _), Some (Some _)) \<Rightarrow> \<comment> \<open>continue to see if there is a trace P might fail on\<close>
                   (case cyphycircus_trace_prefix_ref_by step_limit ts s (t @ [e] ) has_tick P Q term_limit (n-1) of 
-                    Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
+                    Some (_, term_trace) => 
+                      \<comment> \<open>only retain visible events in term trace\<close>
+                      (case e of
+                        Visible e \<Rightarrow> Some (has_tick, (term_of_class.term_of e) # term_trace)
+                      | _ \<Rightarrow> Some (has_tick, term_trace))
                   | _ \<Rightarrow> None)
-              | _ \<Rightarrow> None) (natural_of_nat term_limit) of 
-                  Some (b, terms) \<Rightarrow> Some (b, terms)
-                | None \<Rightarrow> None)"
+              | _ \<Rightarrow> None) (natural_of_nat term_limit))"
 
 
 
@@ -422,25 +505,34 @@ fun cyphycircus_trace_incremental_ref_by where
     (if n = 0 then
       None
     else
-          case full_exhaustive_class.full_exhaustive 
+          full_exhaustive_class.full_exhaustive 
             (\<lambda> (e,term). case (cyphyaction_has_trace step_limit ts [e] has_tick s1 P, cyphyaction_has_trace step_limit ts [e] has_tick s2 Q) of
                 (Some None, Some None) \<Rightarrow> None \<comment> \<open>no point continuing if the prefix fails\<close>
-              | (Some None, Some (Some _)) \<Rightarrow> Some (has_tick, [term ()] ) \<comment> \<open>counterexample found\<close>
+              | (Some None, Some (Some _)) \<Rightarrow> \<comment> \<open>counterexample found\<close>
+                  (case e of
+                    Visible e \<Rightarrow> Some (has_tick, [term_of_class.term_of e] )
+                  | _ \<Rightarrow> None) \<comment> \<open>can't have a hidden error event\<close>
               | (Some (Some _), Some None) \<Rightarrow> None \<comment> \<open>Q is allowed to omit some traces of P, no point continuing if the prefix fails\<close>
               | (Some (Some (s1', None)), Some (Some (s2', None))) \<Rightarrow> None
               | (Some (Some (s1', Some _)), Some (Some (s2', None))) \<Rightarrow> None
               | (Some (Some (s1', None)), Some (Some (s2', Some Q'))) \<Rightarrow> 
                   \<comment> \<open>P terminated but Q might do further events (yielding a counterexample), continue with Stop\<close>
                   (case cyphycircus_trace_incremental_ref_by step_limit ts s1' s2' has_tick cStop Q' term_limit (n-1) of 
-                    Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
+                    Some (_, term_trace) => 
+                      \<comment> \<open>only retain visible events in term trace\<close>
+                      (case e of
+                        Visible e \<Rightarrow> Some (has_tick, (term_of_class.term_of e) # term_trace)
+                      | _ \<Rightarrow> Some (has_tick, term_trace))
                   | _ \<Rightarrow> None)
               | (Some (Some (s1', Some P')), Some (Some (s2', Some Q'))) \<Rightarrow> \<comment> \<open>continue to see if there is a trace P might fail on\<close>
                   (case cyphycircus_trace_incremental_ref_by step_limit ts s1' s2' has_tick P' Q' term_limit (n-1) of 
-                    Some (_, term_trace) => Some (has_tick, (term ()) # term_trace)
+                    Some (_, term_trace) => 
+                      \<comment> \<open>only retain visible events in term trace\<close>
+                      (case e of
+                        Visible e \<Rightarrow> Some (has_tick, (term_of_class.term_of e) # term_trace)
+                      | _ \<Rightarrow> Some (has_tick, term_trace))
                   | _ \<Rightarrow> None)
-              | _ \<Rightarrow> None) (natural_of_nat term_limit) of 
-                  Some (b, terms) \<Rightarrow> Some (b, terms)
-                | None \<Rightarrow> None)"
+              | _ \<Rightarrow> None) (natural_of_nat term_limit))"
 
 ML \<open>
 structure Trace_Evaluation = Proof_Data
@@ -458,7 +550,7 @@ ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth s
   let val actT = Type (@{type_name cyphyaction}, [evT, stT])
       val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
       val cyphycircus_trace_prefix_ref_by = Const (@{const_name cyphycircus_trace_prefix_ref_by},
-                HOLogic.natT --> HOLogic.realT --> stT --> (HOLogic.listT evT) --> HOLogic.boolT
+                HOLogic.natT --> HOLogic.realT --> stT --> (HOLogic.listT (Type (@{type_name visibility}, [evT]))) --> HOLogic.boolT
                   --> actT --> actT --> HOLogic.natT --> HOLogic.natT --> resT)
       val map_option = Const (@{const_name map_option},
         (HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT) --> HOLogic.listT HOLogic.termT)
@@ -470,7 +562,7 @@ ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth s
                   $ (HOLogic.mk_nat step_limit)
                   $ (@{term "code_real_inv"} $ (HOLogic.mk_nat timestep_den))
                   $ (Const (@{const_name default}, stT)) (* initial state *)
-                  $ (HOLogic.mk_list evT [])
+                  $ (HOLogic.mk_list (Type (@{type_name visibility}, [evT])) [])
                   $ (if has_tick then @{term True} else @{term False})
                   $ spec
                   $ impl
@@ -479,7 +571,6 @@ ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth s
   in Code_Runtime.dynamic_value trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
-term cyphycircus_trace_incremental_ref_by
 ML \<open>fun check_cyphycircus_trace_incremental_ref_by ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl = 
   let val actT = Type (@{type_name cyphyaction}, [evT, stT])
       val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
@@ -649,6 +740,30 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
     in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+syntax foo :: svids
+syntax_types svids
+term "cHide P s"
+term "0\<^sub>L"
+term "Skip \<lbrakk> \<^bold>0 |\<lbrace>b\<rbrace>| \<^bold>0 \<rbrakk> Skip"
+
+lemma test6: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
+    (((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace>) (a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip)"
+  quickcheck[expect=counterexample]
+  oops
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+    end\<close>
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
     end\<close>
 
 hide_type foo bar
