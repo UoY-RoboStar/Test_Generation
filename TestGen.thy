@@ -11,6 +11,8 @@ method rct_refine_by_trace = fail
 method rct_simp_counterexample =
   (unfold cyphycircus_trace_ref_by_def recursive_defs rec_sys_defs rct_defs, safe)
 
+ML \<open>exnMessage\<close>
+
 ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
       let val spec_type = Term.fastype_of spec
           val type_error = TYPE ("type of specification and implementation must be cyphyaction:",[spec_type],[spec, impl])
@@ -19,18 +21,25 @@ ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
                 (ty_name, evT :: stT :: _) =>
                   if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
               | _ => raise type_error
+          val recursive_defs = Named_Theorems.get ctxt @{named_theorems recursive_defs}
+          val rec_sys_defs = Named_Theorems.get ctxt @{named_theorems rec_sys_defs}
+          val cyphyaction_datatype_unfolds = Named_Theorems.get ctxt @{named_theorems cyphyaction_datatype_unfolds}
+          val unfolds = recursive_defs @ rec_sys_defs @ cyphyaction_datatype_unfolds
+          val spec = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] spec
+          val impl = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] impl
           val check_result_no_tick = 
             check_cyphycircus_trace_incremental_ref_by ctxt stT evT
-              10(*breadth*) 5(*depth*) 1000(*step limit*) 100(*timestep denominator*) false spec impl
+              50(*breadth*) 10(*depth*) 1000(*step limit*) 100(*timestep denominator*) false spec impl
       in
         case check_result_no_tick of
-            SOME (SOME terms) => SOME terms
-          | _ => NONE    
+            Exn.Res (SOME terms) => SOME terms
+          | Exn.Res NONE => NONE
+          | Exn.Exn e => (warning (exnMessage e); NONE)
       end\<close>
 
 ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) = 
       Timeout.apply (Time.fromSeconds 3) (obtainCounterexample' ctxt spec impl) ()
-      handle Timeout.TIMEOUT _ => NONE\<close>
+      handle Timeout.TIMEOUT _ => (warning "checking timed out"; NONE)\<close>
 
 ML \<open>fun term_to_name ctxt term =
       let val text = XML.content_of (YXML.parse_body (Syntax.string_of_term ctxt term))

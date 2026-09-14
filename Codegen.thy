@@ -159,12 +159,33 @@ abbreviation "RKstep f h y \<equiv>
       k4 = f (y + h *\<^sub>R k3)
   in y + (h / 6) *\<^sub>R (k1 + 2*\<^sub>Rk2 + 2*\<^sub>Rk3 + k4)"
 
+class recursive_system = complete_lattice +
+  fixes bottom :: 'a
+    and total_actions :: "'a itself \<Rightarrow> nat"
+begin end
+
+instantiation cyphyaction ::  (type,type) recursive_system 
+begin
+definition [code_unfold]: "bottom_cyphyaction \<equiv> cChaos"
+definition total_actions_cyphyaction :: "('a, 'b) cyphyaction itself \<Rightarrow> \<nat>" where
+  [code_unfold]: "total_actions_cyphyaction _ \<equiv> (1::nat)"
+instance ..
+end
+
+instantiation prod ::  (recursive_system,recursive_system) recursive_system 
+begin
+definition [code_unfold]: "bottom_prod \<equiv> (bottom, bottom)"
+definition total_actions_prod :: "('a \<times> 'b) itself \<Rightarrow> \<nat>" where
+  [code_unfold]: "total_actions_prod _ \<equiv> (total_actions TYPE('a)) + (total_actions TYPE('b))"
+instance ..
+end
+
 axiomatization
   cEvolve' :: "(real \<Rightarrow> 's \<Rightarrow> 's) \<Rightarrow> ('s \<Rightarrow> bool) \<Rightarrow> ('e, 's) cyphyaction" and
   cInputPrefix' :: "('e \<Rightarrow> (('s \<Rightarrow> \<bool>) \<times> ('e, 's) cyphyaction) option) \<Rightarrow> ('e, 's) cyphyaction" and
   cOutputPrefix' :: "('s \<Rightarrow> 'e) \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction" and
   cParallelAct' :: "('s \<Rightarrow> 's \<Rightarrow> 's \<Rightarrow> 's) \<Rightarrow> 'e set \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction" and
-  cRec' :: "(nat \<Rightarrow> ('e, 's) cyphyaction) \<Rightarrow> ('e, 's) cyphyaction" and
+  cRec' :: "nat \<Rightarrow> (nat \<Rightarrow> ('e, 's) cyphyaction) \<Rightarrow> ('e, 's) cyphyaction" and
   cRename' :: "('e \<leftrightarrow> 'e) \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
 where
   cEvolve_cEvolve'[code_unfold]:
@@ -175,16 +196,21 @@ where
     "cOutputPrefix c expr P \<equiv> cOutputPrefix' (build\<^bsub>c\<^esub> \<circ> expr) P" and
   cParallelAct_cParallelAct'[code_unfold]:
     "cParallelAct ns1 ns2 cs P Q \<equiv> cParallelAct' (\<lambda> s0 s1 s2. s0 \<triangleleft>\<^bsub>ns1\<^esub> s1 \<triangleleft>\<^bsub>ns2\<^esub> s2) cs P Q" and
-  nu_cRec'[code_unfold]:
-    "\<nu> FF \<equiv> cRec' (\<lambda>n. Nat.funpow n FF cChaos)" and
+  nu_cRec'1[code_unfold]:
+    "\<nu> FF \<equiv> cRec' (total_actions TYPE(('e, 's) cyphyaction)) (\<lambda>n. Nat.funpow n FF bottom)" and
+  nu_cRec'2[code_unfold]:
+    "g (\<nu> FF') \<equiv> cRec' (total_actions TYPE('p)) (\<lambda>n. g (Nat.funpow n FF' bottom))" and
   cRename_cRename'[code_unfold]:
     "cRename rel P = cRename' rel P"
-for v :: "'b :: real_normed_vector \<Longrightarrow> 's"
+  for v :: "'b :: real_normed_vector \<Longrightarrow> 's"
+and FF :: "('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
+and FF' :: "'p::recursive_system \<Rightarrow> 'p::recursive_system"
+and g :: "'p \<Rightarrow> ('e, 's) cyphyaction"
 and f :: "'s \<Rightarrow> 's"
 and p :: "'s \<Rightarrow> bool"
 
-lemmas cyphyaction_datatype_unfolds =
-  cEvolve_cEvolve' cInputPrefix_cInputPrefix' cOutputPrefix_cOutputPrefix' cParallelAct_cParallelAct' nu_cRec'
+named_theorems cyphyaction_datatype_unfolds 
+lemmas [cyphyaction_datatype_unfolds] = cEvolve_cEvolve' cInputPrefix_cInputPrefix' cOutputPrefix_cOutputPrefix' cParallelAct_cParallelAct' nu_cRec'1 nu_cRec'2
 
 code_datatype cSkip cAssigns cStop cChaos cAssume cEvolve' cSyncPrefix cOutputPrefix' cInputPrefix'
   cSeq cGuard cCond "inf :: ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
@@ -339,8 +365,8 @@ axiomatization
                           ))
             | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
   step_cyphyaction_cRec'[code]: (* unroll the loop at least enough to match the trace *)
-    "step_cyphyaction timestep t s (cRec' FF)
-      = step_cyphyaction timestep t s (FF (1 + length t))" and
+    "step_cyphyaction timestep t s (cRec' n FF)
+      = step_cyphyaction timestep t s (FF (n * length t))" and
   step_cyphyaction_cHide1[code]: (* if there are no events in the trace, just ignore hiding *)
     "step_cyphyaction timestep [] s (cHide P S)
       = map_option (map (map_cyphystep_continuation (\<lambda>P. cHide P S))) (step_cyphyaction timestep [] s P)" and
@@ -568,7 +594,7 @@ ML \<open>fun check_cyphycircus_trace_prefix_ref_by ctxt stT evT breadth depth s
                   $ impl
                   $ (HOLogic.mk_nat breadth)
                   $ (HOLogic.mk_nat depth)
-  in Code_Runtime.dynamic_value trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
+  in Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
 ML \<open>fun check_cyphycircus_trace_incremental_ref_by ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl = 
@@ -593,7 +619,7 @@ ML \<open>fun check_cyphycircus_trace_incremental_ref_by ctxt stT evT breadth de
                   $ impl
                   $ (HOLogic.mk_nat breadth)
                   $ (HOLogic.mk_nat depth)
-  in Code_Runtime.dynamic_value trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
+  in Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
 section \<open>testing the codegen\<close>
@@ -619,16 +645,16 @@ lemma test1: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 lemma test2: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
@@ -639,16 +665,16 @@ lemma test2: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 recursive where "baz = b \<rightarrow> baz"
@@ -661,16 +687,16 @@ lemma test3: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"}))
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}
-      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"}))
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})))
     end\<close>
 
 lemma test4: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
@@ -681,16 +707,16 @@ lemma test4: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})
-      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})
-      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"})
+      @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 recursive where
@@ -709,16 +735,16 @@ lemma test5: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 lemma test5': "cyphycircus_trace_ref_by 10 (code_real_inv 1000) (default::bar) t has_tick
@@ -730,16 +756,16 @@ lemma test5': "cyphycircus_trace_ref_by 10 (code_real_inv 1000) (default::bar) t
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 10 100 false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 lemma test6: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
@@ -749,16 +775,41 @@ lemma test6: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar)
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map (Option.map traceToString) (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
       (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})
-      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
+    end\<close>
+
+recursive where
+  "test6 = a\<^bold>.0 \<rightarrow> test6_2"
+| "test6_2 = a\<^bold>.1 \<rightarrow> test6_3"
+| "test6_3 = a\<^bold>.2 \<rightarrow> test6"
+
+lemma test6: "cyphycircus_trace_ref_by 10000 (code_real_inv 1000) (default::bar) t has_tick
+    test6 (a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow> b \<rightarrow>  Skip)"
+  apply (unfold cyphycircus_trace_ref_by_def recursive_defs rec_sys_defs cyphyaction_datatype_unfolds total_actions_cyphyaction_def total_actions_prod_def)
+  quickcheck[expect=counterexample, size=10]
+  oops
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_prefix_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "test6 :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow> b \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
+    end\<close>
+
+ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
+        fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+      (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "test6 :: (foo, bar) cyphyaction"})
+      @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow> b \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
 
 hide_type foo bar

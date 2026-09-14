@@ -173,8 +173,6 @@ ML \<open>obtainCounterexample @{context}
       @{term "RescueDrone :: (rescueDrone_chans, rescueDrone_state) cyphyaction"}
       @{term "RescueDrone_mTransTarget_Output3 :: (rescueDrone_chans, rescueDrone_state) cyphyaction"}\<close>
 
-
-
 ML \<open>obtainCounterexample @{context}
       @{term "RescueDrone :: (rescueDrone_chans, rescueDrone_state) cyphyaction"}
       @{term "RescueDrone_mTransTarget_Output4 :: (rescueDrone_chans, rescueDrone_state) cyphyaction"}\<close>
