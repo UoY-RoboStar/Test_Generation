@@ -634,9 +634,10 @@ structure Trace_Evaluation = Proof_Data
 val trace_eval_cookie = (Trace_Evaluation.get, Trace_Evaluation.put, "Trace_Evaluation.put");
 \<close>
 
+definition [code]: "code_real_of_rat n k \<equiv> Ratreal (rat_of_rational (Frct_integer (integer_of_nat n, integer_of_nat k)))"
 definition [code]: "code_real_inv k \<equiv> Ratreal (rat_of_rational (Frct_integer (1, integer_of_nat k)))"
 
-ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT breadth depth step_limit timestep_den has_tick spec impl = 
+ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT breadth depth step_limit timestep_term has_tick spec impl = 
   let val actT = Type (@{type_name cyphyaction}, [evT, stT])
       val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
       val cyphycircus_trace_incremental_ref_by = Const (@{const_name cyphycircus_trace_incremental_ref_by_no_hiding},
@@ -645,7 +646,7 @@ ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT 
       val unpack_result = @{term "map_option snd :: (bool \<times> term list) option \<Rightarrow> term list option"}
       val term = cyphycircus_trace_incremental_ref_by
                   $ (HOLogic.mk_nat step_limit)
-                  $ (@{term "code_real_inv"} $ (HOLogic.mk_nat timestep_den))
+                  $ timestep_term
                   $ (Const (@{const_name default}, stT)) (* initial state for P *)
                   $ (Const (@{const_name default}, stT)) (* initial state for Q *)
                   $ (if has_tick then @{term True} else @{term False})
@@ -662,7 +663,7 @@ ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT 
       Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
-ML \<open>fun check_cyphycircus_has_trace_incremental_insts ctxt stT evT breadth step_limit timestep_den trace has_tick P P_pred = 
+ML \<open>fun check_cyphycircus_has_trace_incremental_insts ctxt stT evT breadth step_limit timestep_term trace has_tick P P_pred = 
   let val specT = fastype_of P
       val predT = fastype_of P_pred
       val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
@@ -673,7 +674,7 @@ ML \<open>fun check_cyphycircus_has_trace_incremental_insts ctxt stT evT breadth
       val term = cyphycircus_has_trace_incremental
                   $ (HOLogic.mk_nat step_limit)
                   $ (HOLogic.mk_nat breadth)
-                  $ (@{term "code_real_inv"} $ (HOLogic.mk_nat timestep_den))
+                  $ timestep_term
                   $ P
                   $ P_pred
                   $ (Const (@{const_name default}, stT)) (* initial state *)
@@ -716,7 +717,7 @@ subsection \<open>Test 1: @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<righta
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -728,7 +729,7 @@ subsection \<open>Test 2: @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<righta
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip :: (foo, bar) cyphyaction"}
       @{term "a\<^bold>.1 \<rightarrow> a\<^bold>?x \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -742,7 +743,7 @@ recursive where "baz = b \<rightarrow> baz"
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
        @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})))
     end\<close>
@@ -754,7 +755,7 @@ subsection \<open>Test 4: @{term "(\<mu> X. b \<rightarrow> X) \<sqsubseteq> b \
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 true
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} true
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "baz :: (foo, bar) cyphyaction"})
       @{term "b \<rightarrow> Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -771,7 +772,7 @@ recursive where
 text \<open>Refinement @{term "test5_cont \<sqsubseteq> a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip"}, gives @{term "[a_C 2, a_C 0]"}\<close>
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in  Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       (@{term "test5_cont :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!2 \<rightarrow> a\<^bold>!0 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -789,12 +790,12 @@ text \<open>Refinement @{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip)
       gives @{term "[a_C 0, b_C ()]"}. This ensures hidden events are, in fact, hidden.\<close>
 
 (* errors out on refinement check due to hiding *)
-ML \<open>case (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+ML \<open>case (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!0 \<rightarrow> b \<rightarrow> a\<^bold>!1 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}) of
         Exn.Res _ => error "Expected exception to be thrown"
       | Exn.Exn e => if Exn.is_interrupt e then Exn.reraise e else (writeln o Runtime.exn_message o (Runtime.exn_context (SOME @{context}))) e\<close> 
-ML \<open>case (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+ML \<open>case (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}
       (@{term "((a\<^bold>.0 \<rightarrow> b \<rightarrow> Skip) \<lbrakk>\<^bold>0|\<lbrace>b\<rbrace>|\<^bold>0\<rbrakk> (b \<rightarrow> a\<^bold>.1 \<rightarrow> Skip)) \<Zhide> \<lbrace>b\<rbrace> :: (foo, bar) cyphyaction"})) of
         Exn.Res _ => error "Expected exception to be thrown"
@@ -821,7 +822,7 @@ recursive test7 :: "(foo, bar) cyphyaction"
 text \<open>Refinement @{term "test7  \<sqsubseteq> a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow> b \<rightarrow>  Skip"} gives @{term "[a_C 0, a_C 1, b_C ()]"}\<close>
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       (Raw_Simplifier.rewrite_term @{theory} @{thms recursive_defs rec_sys_defs cyphyaction_datatype_unfolds} [] @{term "test7 :: (foo, bar) cyphyaction"})
       @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow> b \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -832,7 +833,7 @@ subsection \<open>Test 8: refinement @{term "a\<^bold>!0 \<rightarrow> (inf (a\<
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       @{term "a\<^bold>!0 \<rightarrow> (inf (a\<^bold>!1 \<rightarrow>  Skip) (a\<^bold>!2 \<rightarrow>  Skip)) :: (foo, bar) cyphyaction"}
       @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}))
     end\<close>
@@ -843,7 +844,7 @@ subsection \<open>Test 9: refinement @{term "a\<^bold>!0 \<rightarrow> a\<^bold>
 
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
-    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 100 false
+    in Option.map traceToString (Exn.release (check_cyphycircus_trace_incremental_ref_by_no_hiding @{context} @{typ bar} @{typ foo} 10 10 1000 @{term "code_real_inv 100"} false
       @{term "a\<^bold>!0 \<rightarrow> a\<^bold>!1 \<rightarrow>  Skip :: (foo, bar) cyphyaction"}      
       @{term "a\<^bold>!0 \<rightarrow> (inf (a\<^bold>!1 \<rightarrow>  Skip) (a\<^bold>!2 \<rightarrow>  Skip)) :: (foo, bar) cyphyaction"}))
     end\<close>

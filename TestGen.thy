@@ -4,14 +4,107 @@ theory TestGen
     and "RoboChart" "Mutants" "RoboWorld" "Iterations"
 begin
 
+section \<open>Declare options for the test generation algorithm\<close>
+
+ML \<open>fun code_real_of_rat n d = @{term code_real_of_rat} $ (HOLogic.mk_nat n) $ (HOLogic.mk_nat d)\<close>
+ML \<open>fun parse_rat_term str =
+      if String.member str #"/" then
+        case String.tokens (equal #"/") str of
+            [num, den] =>
+              (case (Int.fromString num, Int.fromString den) of
+                  (SOME num, SOME den) => SOME (@{term code_real_of_rat} $ (HOLogic.mk_nat num) $ (HOLogic.mk_nat den))
+                | _ => NONE)
+            | _ => NONE
+      else if String.member str #"." then
+        case String.tokens (equal #".") (if String.isPrefix "." str andalso not (String.isSuffix "." str) then "0"^str else str) of
+            [int, frac] =>
+              let val int = if String.size int = 0 then SOME 0 else Int.fromString int 
+                  val int = Option.map (fn x => code_real_of_rat x 1) int
+                  val frac_den = String.size frac
+                  val frac = if frac_den = 0 then 
+                      SOME (code_real_of_rat 0 1)
+                    else
+                      Option.map (fn x => code_real_of_rat x (Integer.pow frac_den 10)) (Int.fromString frac)
+              in (case (int, frac) of
+                      (SOME int, SOME frac) => SOME (@{term "plus :: real \<Rightarrow> real \<Rightarrow> real"} $ int $ frac)
+                    | _ => NONE)
+              end
+          | [int] => Option.map (fn x => code_real_of_rat x 1) (Int.fromString int)
+          | _ => NONE
+      else
+        Option.map (fn x => code_real_of_rat x 1) (Int.fromString str)\<close>
+
+
+text \<open>testgen_step_limit: limit on the number of non-event steps searched through before assuming divergence\<close>
+ML \<open>val testgen_step_limit_opt = Attrib.setup_config_int @{binding testgen_step_limit} (K 1000)\<close>
+ML \<open>fun set_testgen_step_limit_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_step_limit_opt n ctxt
+        | NONE => error ("testgen_step_limit must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_step_limit_opt ctxt = Config.get ctxt testgen_step_limit_opt\<close>
+
+text \<open>testgen_timestep: time step used to process continuous evolutions\<close>
+ML \<open>val testgen_timestep_opt = Attrib.setup_config_string @{binding testgen_timestep} (K "1/100")\<close>
+ML \<open>fun set_testgen_timestep_opt value pos ctxt =
+      case parse_rat_term value of
+          SOME _ => Config.put testgen_timestep_opt value ctxt
+        | NONE => error ("testgen_timestep must be a string representing a valid rational number" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_timestep_opt ctxt = the (parse_rat_term (Config.get ctxt testgen_timestep_opt))\<close>
+
+text \<open>testgen_trace_depth: length of traces searched for\<close>
+ML \<open>val testgen_trace_depth_opt = Attrib.setup_config_int @{binding testgen_trace_depth} (K 10)\<close>
+ML \<open>fun set_testgen_trace_depth_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_trace_depth_opt n ctxt
+        | NONE => error ("testgen_trace_depth must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_trace_depth_opt ctxt = Config.get ctxt testgen_trace_depth_opt\<close>
+
+text \<open>testgen_trace_breadth: bound on the breadth of channel events to be searched when constructing traces\<close>
+ML \<open>val testgen_trace_breadth_opt = Attrib.setup_config_int @{binding testgen_trace_breadth} (K 30)\<close>
+ML \<open>fun set_testgen_trace_breadth_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_trace_breadth_opt n ctxt
+        | NONE => error ("testgen_trace_breadth must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_trace_breadth_opt ctxt = Config.get ctxt testgen_trace_breadth_opt\<close>
+
+text \<open>testgen_consts_breadth: bound on the breadth of values to be searched when testing constant instantiations\<close>
+ML \<open>val testgen_consts_breadth_opt = Attrib.setup_config_int @{binding testgen_consts_breadth} (K 50)\<close>
+ML \<open>fun set_testgen_consts_breadth_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_consts_breadth_opt n ctxt
+        | NONE => error ("testgen_consts_breadth must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_consts_breadth_opt ctxt = Config.get ctxt testgen_consts_breadth_opt\<close>
+
+text \<open>testgen_timeout: time in milliseconds to wait for checks to return a trace\<close>
+ML \<open>val testgen_timeout_opt = Attrib.setup_config_int @{binding testgen_timeout} (K 3000)\<close>
+ML \<open>fun set_testgen_timeout_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_timeout_opt n ctxt
+        | NONE => error ("testgen_timeout must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_timeout_opt ctxt = Config.get ctxt testgen_timeout_opt\<close>
+
+
+ML \<open>fun parse_testgen_opts ctxt opts = fold (fn ((name, name_pos), (value, value_pos)) => fn ctxt =>
+      case name of
+        "testgen_step_limit" => set_testgen_step_limit_opt value value_pos ctxt
+      | "testgen_timestep" => set_testgen_timestep_opt value value_pos ctxt
+      | "testgen_trace_depth" => set_testgen_trace_depth_opt value value_pos ctxt
+      | "testgen_trace_breadth" => set_testgen_trace_breadth_opt value value_pos ctxt
+      | "testgen_consts_breadth" => set_testgen_consts_breadth_opt value value_pos ctxt
+      | "testgen_timeout" => set_testgen_timeout_opt value value_pos ctxt
+      | _ => error ("unknown option: " ^ name ^ (Position.here name_pos))) opts ctxt\<close>
+
+
+section \<open>Proof methods for use by the test generation algorithm\<close>
+
 named_theorems rct_defs (* define a theorem set for process definitions so unfolding can be done easier *)
 
 method rct_refine = (simp?, unfold rct_defs, rule ref_preorder.order_refl)
 method rct_refine_by_trace = fail
 method rct_simp_counterexample =
-  (unfold cyphycircus_trace_ref_by_def recursive_defs rec_sys_defs rct_defs, safe)
+  (unfold recursive_defs rec_sys_defs rct_defs, safe)
 
-ML \<open>exnMessage\<close>
+section \<open>Construction of counterexamples\<close>
 
 ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
       let val spec_type = Term.fastype_of spec
@@ -27,9 +120,13 @@ ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
           val unfolds = recursive_defs @ rec_sys_defs @ cyphyaction_datatype_unfolds
           val spec = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] spec
           val impl = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] impl
+          val trace_breadth = get_testgen_trace_breadth_opt ctxt
+          val trace_depth = get_testgen_trace_depth_opt ctxt
+          val step_limit = get_testgen_step_limit_opt ctxt
+          val timestep = get_testgen_timestep_opt ctxt
           val check_result_no_tick = 
-            check_cyphycircus_trace_incremental_ref_by ctxt stT evT
-              50(*breadth*) 10(*depth*) 1000(*step limit*) 100(*timestep denominator*) false spec impl
+            check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT
+              trace_breadth trace_depth step_limit timestep false spec impl
       in
         case check_result_no_tick of
             Exn.Res (SOME terms) => SOME terms
@@ -38,8 +135,11 @@ ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
       end\<close>
 
 ML \<open>fun obtainCounterexample ctxt (spec : term) (impl : term) = 
-      Timeout.apply (Time.fromSeconds 3) (obtainCounterexample' ctxt spec impl) ()
+      Timeout.apply (Time.fromMilliseconds (get_testgen_timeout_opt ctxt)) (obtainCounterexample' ctxt spec impl) ()
       handle Timeout.TIMEOUT _ => (warning "checking timed out"; NONE)\<close>
+
+
+section \<open>Refinement checking\<close>
 
 ML \<open>fun term_to_name ctxt term =
       let val text = XML.content_of (YXML.parse_body (Syntax.string_of_term ctxt term))
@@ -84,7 +184,44 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
       end
 \<close>
 
-ML \<open>fun checkTraceOf ctxt (impl : term) (trace : term list)  = (NONE, ctxt)\<close>
+section \<open>Trace checking\<close>
+
+ML_val check_cyphycircus_has_trace_incremental_insts
+
+ML \<open>dest_Type @{typ "'a \<Rightarrow> ('e, 's) cyphyaction"}\<close>
+typ "('a, 'b) fun"
+
+ML \<open>fun checkTraceOf' ctxt (rwd : term) (rwd_pred : term) (trace : term list) () = 
+      let val rwd_type = Term.fastype_of rwd
+          val rwd_type_error = TYPE ("type of RoboWorld process must be a (single-argument) function that outputs cyphyaction:",[rwd_type],[rwd])
+          val (inpT, evT, stT) =
+            case dest_Type rwd_type of
+                (@{type_name "fun"}, [inp, outp]) =>
+                  (case dest_Type outp of
+                      (@{type_name "cyphyaction"}, [evT, stT]) => (inp, evT, stT)
+                    | _ => raise rwd_type_error)
+              | _ => raise rwd_type_error
+          val rwd_pred_type = Term.fastype_of rwd_pred
+          val rwd_pred_type_error = TYPE ("type of RoboWorld predicate must be a (single-argument) function with the same input as the RoboWorld process and an output of boolean:",[rwd_type, rwd_pred_type],[rwd, rwd_pred])
+          val _ = 
+            case dest_Type rwd_pred_type of
+                (@{type_name "fun"}, [inp, outp]) => if inp = inpT andalso outp = @{typ bool} then () else raise rwd_pred_type_error
+              | _ => raise rwd_pred_type_error
+          val consts_breadth = get_testgen_consts_breadth_opt ctxt
+          val step_limit = get_testgen_step_limit_opt ctxt
+          val timestep = get_testgen_timestep_opt ctxt
+          val check_result_no_tick =  check_cyphycircus_has_trace_incremental_insts ctxt evT stT consts_breadth step_limit timestep trace false rwd rwd_pred
+      in case check_result_no_tick of
+            Exn.Res (SOME terms) => SOME terms
+          | Exn.Res NONE => NONE
+          | Exn.Exn e => (warning (exnMessage e); NONE)
+      end\<close>
+
+ML \<open>fun checkTraceOf ctxt (rwd : term) (rwd_pred : term) (trace : term list) = 
+      Timeout.apply (Time.fromMilliseconds (get_testgen_timeout_opt ctxt)) (checkTraceOf' ctxt rwd rwd_pred trace) ()
+      handle Timeout.TIMEOUT _ => (warning "checking timed out"; NONE)\<close>
+
+section \<open>Testing algorithm\<close>
 
 ML \<open>fun traceToProcess typ (trace : term list) =
           if null trace then
@@ -97,8 +234,18 @@ ML \<open>fun traceToProcess typ (trace : term list) =
 ML \<open>structure TraceSet = Set(type key = term list val ord = list_ord Term_Ord.fast_term_ord)\<close>
 ML \<open>structure TermSet = Set(type key = term val ord = Term_Ord.fast_term_ord)\<close>
 
-ML \<open>fun testGeneration ctxt rct muts rwd n = 
+ML \<open>fun uncurry_term term =
+      let val typ = fastype_of term
+          val inpTs = Term.binder_types typ
+          val free_names = Term.add_free_names term []
+          val inps = map Free (Name.invent_names (Name.make_context free_names) "a" inpTs)
+      in HOLogic.tupled_lambda (HOLogic.mk_tuple inps) (Term.list_comb (term, inps))
+      end\<close>
+
+ML \<open>fun testGeneration ctxt (rct: term) (muts: term list) (rwd: term) (rwd_pred: term) (n: int) = 
       let val rctType = fastype_of rct
+          val rwd = uncurry_term rwd
+          val rwd_pred = uncurry_term rwd_pred
           fun testGenLoop ctxt mutsToCheck refiningMuts failedMuts feasibleTrs infeasibleTrs n =
             let val tracesThenAny =
                       map (fn trace => Const (@{const_name useq}, rctType --> rctType --> rctType) $ traceToProcess rctType trace $
@@ -123,11 +270,11 @@ ML \<open>fun testGeneration ctxt rct muts rwd n =
                 val (refMuts, failMuts, traces, ctxt) =
                       TermSet.fold checkMutant mutsToCheck (refiningMuts, failedMuts, TraceSet.empty, ctxt)
                 fun checkTrace trace (fts, its, ctxt) =
-                  case checkTraceOf ctxt rwd trace of
-                      (NONE, ctxt) => (
+                  case checkTraceOf ctxt rwd rwd_pred trace of
+                      NONE => (
                         (*writeln ("feasible trace: " ^ (String.concatWith " \<rightarrow> " (map (Pretty.pure_string_of o Syntax.pretty_term ctxt) trace)));*)
                         (TraceSet.insert trace fts, its, ctxt))
-                    | (SOME counterexamplePrefix, ctxt) => (
+                    | SOME counterexamplePrefix => (
                         (*writeln ("infeasible trace counterexample: " ^ (String.concatWith " \<rightarrow> " (map (Pretty.pure_string_of o Syntax.pretty_term ctxt) counterexamplePrefix)));*)
                         (fts, TraceSet.insert counterexamplePrefix its, ctxt))
                 val (fts, its, ctxt) = TraceSet.fold checkTrace traces (feasibleTrs, infeasibleTrs, ctxt)
@@ -146,17 +293,21 @@ ML \<open>fun testGeneration ctxt rct muts rwd n =
         ctxt
       end\<close>
 
+section \<open>Testing command\<close>
+
 ML \<open>Outer_Syntax.local_theory \<^command_keyword>\<open>generate_tests_rct\<close>
-  "generates tests from the semantics of a RoboChart model and its mutants, incorporating a RoboWorld model"
-  ((((Parse.$$$ "RoboChart" -- Parse.$$$ "=")  |-- Parse.term)
+  "generates tests from the semantics of a RoboChart model and its mutants, checking feasibility against a RoboWorld model"
+  ((Parse.options) -- (((Parse.$$$ "RoboChart" -- Parse.$$$ "=")  |-- Parse.term)
     -- ((Parse.$$$ "Mutants" -- Parse.$$$ "=")  |-- Parse.list1 Parse.term)
-    -- ((Parse.$$$ "RoboWorld" -- Parse.$$$ "=")  |-- Parse.term)
+    -- ((Parse.$$$ "RoboWorld" -- Parse.$$$ "=")  |-- (Parse.term -- Parse.term))
     -- ((Parse.$$$ "Iterations" -- Parse.$$$ "=")  |-- Parse.nat))
-  >> (fn (((rct, muts), rwd), n) => fn ctxt =>
-      let val rct_term = Syntax.read_term ctxt rct
+  >> (fn (opts, (((rct, muts), (rwd, rwd_pred)), n)) => fn ctxt =>
+      let val ctxt = parse_testgen_opts ctxt opts 
+          val rct_term = Syntax.read_term ctxt rct
           val mut_terms = map (Syntax.read_term ctxt) muts
           val rwd_term = Syntax.read_term ctxt rwd
-      in testGeneration ctxt rct_term mut_terms rwd_term n
+          val rwd_pred_term = Syntax.read_term ctxt rwd_pred
+      in testGeneration ctxt rct_term mut_terms rwd_term rwd_pred_term n
       end))\<close>
 
 end
