@@ -237,11 +237,6 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
 
 section \<open>Trace checking\<close>
 
-ML_val check_cyphycircus_has_trace_incremental_insts
-
-ML \<open>dest_Type @{typ "('e, 's) cyphyaction"}\<close>
-typ "('a, 'b) fun"
-
 ML \<open>fun checkTraceOf' ctxt (rwd : term) (rwd_pred : term) (trace : term list) () = 
       let val rwd_type = Term.fastype_of rwd
           val rwd_type_error = TYPE ("type of RoboWorld process must be a (single-argument) function that outputs cyphyaction:",[rwd_type],[rwd])
