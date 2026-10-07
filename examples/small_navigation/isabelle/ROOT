@@ -1,0 +1,3 @@
+session Navigation_Small = Test_Generation +
+  options [document = false]
+  theories Small_Navigation Small_Navigation_Mutant Small_Navigation_Example

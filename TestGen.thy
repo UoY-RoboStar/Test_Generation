@@ -1,5 +1,5 @@
 theory TestGen
-  imports Axiomatic_CyPhyCircus.Ax_CyPhyCircus Codegen
+  imports Ax_CyPhyCircus Codegen tactics
   keywords "generate_tests_rct" :: thy_decl
     and "RoboChart" "Mutants" "RoboWorld" "Iterations"
 begin
@@ -97,14 +97,31 @@ ML \<open>fun parse_testgen_opts ctxt opts = fold (fn ((name, name_pos), (value,
 
 section \<open>Proof methods for use by the test generation algorithm\<close>
 
-named_theorems rct_defs (* define a theorem set for process definitions so unfolding can be done easier *)
+text \<open>rct_defs and rct_refine are defined in tactics.\<close>
 
-method rct_refine = (simp?, unfold rct_defs, rule ref_preorder.order_refl)
 method rct_refine_by_trace = fail
 method rct_simp_counterexample =
   (unfold recursive_defs rec_sys_defs rct_defs, safe)
 
 section \<open>Construction of counterexamples\<close>
+
+lemma search_event_prefix_function [cyphy_search_preparation]:
+  "cEventPrefix e = cOutputPrefix' (\<lambda>_. e)"
+  by (rule ext)
+     (simp only: event_prefix_as_output cOutputPrefix_cOutputPrefix' prism_id_def
+       refinement_prism_build comp_def id_apply)
+
+ML \<open>
+  fun prepareCounterexample ctxt process =
+    let
+      val equations = Named_Theorems.get ctxt @{named_theorems recursive_defs} @
+        Named_Theorems.get ctxt @{named_theorems rec_sys_defs} @
+        Named_Theorems.get ctxt @{named_theorems cyphy_search_preparation} @
+        Named_Theorems.get ctxt @{named_theorems cyphyaction_datatype_unfolds}
+      val ctxt' = put_simpset HOL_basic_ss ctxt addsimps equations
+      val equality = Simplifier.rewrite ctxt' (Thm.cterm_of ctxt process)
+    in (Thm.term_of (Thm.rhs_of equality), equality) end
+\<close>
 
 ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
       let val spec_type = Term.fastype_of spec
@@ -114,12 +131,8 @@ ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
                 (ty_name, evT :: stT :: _) =>
                   if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
               | _ => raise type_error
-          val recursive_defs = Named_Theorems.get ctxt @{named_theorems recursive_defs}
-          val rec_sys_defs = Named_Theorems.get ctxt @{named_theorems rec_sys_defs}
-          val cyphyaction_datatype_unfolds = Named_Theorems.get ctxt @{named_theorems cyphyaction_datatype_unfolds}
-          val unfolds = recursive_defs @ rec_sys_defs @ cyphyaction_datatype_unfolds
-          val spec = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] spec
-          val impl = Raw_Simplifier.rewrite_term (Proof_Context.theory_of ctxt) unfolds [] impl
+          val (spec, _) = prepareCounterexample ctxt spec
+          val (impl, _) = prepareCounterexample ctxt impl
           val trace_breadth = get_testgen_trace_breadth_opt ctxt
           val trace_depth = get_testgen_trace_depth_opt ctxt
           val step_limit = get_testgen_step_limit_opt ctxt
@@ -151,6 +164,13 @@ ML \<open>fun term_to_name ctxt term =
           (if null ident_tokens then "term" else (hd ident_tokens) ^ "_") ^ (SHA1.rep (SHA1.digest text))
       end\<close>
           
+(* Returns the specification and implementation from the goal that rct_refine leaves,
+   which has the form impl <= spec or ref_by spec impl. *)
+ML \<open>fun simplifiedOperands goal =
+      case HOLogic.dest_Trueprop (Logic.strip_assums_concl (hd (Thm.prems_of goal))) of
+          Const (@{const_name less_eq}, _) $ impl $ spec => (spec, impl)
+        | Const (@{const_name ref_by}, _) $ spec $ impl => (spec, impl)\<close>
+
 ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
       let val spec_type = Term.fastype_of spec
           val ref_by = Const (@{const_name ref_by}, spec_type --> spec_type --> @{typ bool})
@@ -174,8 +194,10 @@ ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
                     val ((bound_name, _), ctxt) = Local_Theory.note ((binding, []), [finished_goal]) ctxt
                 in (NONE, ctxt) end
               else
-                (* proof method didn't finish the proof, try to construct counterexample *)
-                (SOME (obtainCounterexample ctxt spec impl), ctxt)
+                (* proof method didn't finish the proof, try to construct counterexample
+                   from the simplified specification and implementation *)
+                let val (spec, impl) = simplifiedOperands goal
+                in (SOME (obtainCounterexample ctxt spec impl), ctxt) end
           | SOME (Seq.Error err, _) =>
               (* an error occurred, report it and try to construct counterexample *)
               let val _ = warning (err ())

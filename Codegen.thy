@@ -1,5 +1,5 @@
 theory Codegen
-  imports Axiomatic_CyPhyCircus.Ax_CyPhyCircus
+  imports Ax_CyPhyCircus
     "ITree_Simulation.Code_Target_Rational" Interaction_Trees.ITree_Extraction
     "HOL-Library.Multiset" "Framed_ODEs.Framed_ODEs" (*"HOL-Library.Code_Real_Approx_By_Float"*)
     "HOL-Library.AList"
@@ -10,17 +10,6 @@ unbundle no UTP_Syntax
 unbundle maplet_syntax
 
 no_notation Abstract_Prog_Syntax.useq (infixr ";" 55)
-
-(* add some missing monotonicity axioms (needs moving to Axiomatic_CyPhyCircus.Ax_CyPhyCircus) *)
-axiomatization where
-  cSync_mono [mono_rule]: "\<lbrakk> P\<^sub>1 \<le> P\<^sub>2 \<rbrakk> \<Longrightarrow> c \<rightarrow> P\<^sub>1 \<le> c \<rightarrow> P\<^sub>2" and
-  cInput_mono [mono_rule]: "\<lbrakk>\<And>x. F\<^sub>1 x \<le> F\<^sub>2 x \<rbrakk> \<Longrightarrow> c'\<^bold>?x \<rightarrow> F\<^sub>1 x \<le> c'\<^bold>?x \<rightarrow> F\<^sub>2 x" and
-  cOutput_mono [mono_rule]: "\<lbrakk> P\<^sub>1 \<le> P\<^sub>2 \<rbrakk> \<Longrightarrow> cOutputPrefix c' e P\<^sub>1 \<le> cOutputPrefix c' e P\<^sub>2"
-for c :: "unit \<Longrightarrow>\<^sub>\<triangle> 'e"
-and c' :: "'a \<Longrightarrow>\<^sub>\<triangle> 'e"
-and F\<^sub>1 F\<^sub>2 :: "'a \<Rightarrow> ('e, 's) cyphyaction"
-and P\<^sub>1 P\<^sub>2 :: "('e, 's) cyphyaction"
-and e :: "'s \<Rightarrow> 'a"
 
 section \<open>Miscellaneous Codegen Setup\<close>
 
