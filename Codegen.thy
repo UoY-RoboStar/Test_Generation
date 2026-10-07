@@ -246,8 +246,8 @@ fun group_cyphysteps :: "('e, 's) cyphystep list  \<Rightarrow>
 axiomatization
   step_cyphyaction :: "real \<Rightarrow> nat \<Rightarrow> 'e visibility list \<Rightarrow> 's \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphystep list option"
   where
-  step_cyphyaction_cAssigns[code]: (* terminate immediately with updated state, or allow time to pass *)
-    "step_cyphyaction timestep n t s (cAssigns subst) = Some [Termination (subst s), Timestep (subst s) False (cAssigns subst)]" and
+  step_cyphyaction_cAssigns[code]: (* terminate immediately with updated state *)
+    "step_cyphyaction timestep n t s (cAssigns subst) = Some [Termination (subst s)]" and
   step_cyphyaction_cStop[code]: (* deadlock without terminating - but allow time to pass *)
     "step_cyphyaction timestep n t s cStop = Some [Timestep s False cStop]" and
   step_cyphyaction_cChaos[code]: (* error out of checking *)
@@ -299,10 +299,26 @@ axiomatization
         | None \<Rightarrow> None)" and
   step_cyphyaction_cGuard[code]: (* deadlock if predicate is false, otherwise behave as inner action*)
     "step_cyphyaction timestep n t s (cGuard pred P)
-      = (if pred s then step_cyphyaction timestep n t s P else Some [])" and
+      = (if pred s then step_cyphyaction timestep n t s P else Some [Timestep s False cStop] )" and
   step_cyphyaction_cCond[code]: (* behave as either inner action depending on predicate*)
     "step_cyphyaction timestep n t s (cCond P pred Q)
       = (if pred s then step_cyphyaction timestep n t s P else step_cyphyaction timestep n t s Q)" and
+  step_cyphyaction_cInterruptCond: (* terminate immediately if the predicate is true, otherwise continue the inner action without resolving the interrupt *)
+    "step_cyphyaction timestep n t s (cInterruptCond P pred) =
+      (if pred s then
+        step_cyphyaction timestep n t s cSkip
+      else
+        map_option
+          (map (map_cyphystep_continuation (\<lambda>P'. cInterruptCond P' pred)))
+          (step_cyphyaction timestep n t s P))" and
+  step_cyphyaction_cTimeout: (* behave as Q if the deadline has expires is true, otherwise continue P without, reducing the deadline *)
+    "step_cyphyaction timestep n t s (cTimeout P sn Q) =
+      (if sn s = 0 then
+        step_cyphyaction timestep n t s Q
+      else
+        map_option
+          (map (map_cyphystep_continuation (\<lambda>P'. cTimeout P' (\<lambda>s. sn s - timestep) Q)))
+          (step_cyphyaction timestep n t s P))" and
   step_cyphyaction_inf[code]: (* evaluate both and concatenate results *)
     "step_cyphyaction timestep n t s (inf P Q)
       = (case (step_cyphyaction timestep n t s P, step_cyphyaction timestep n t s Q) of
@@ -324,9 +340,7 @@ axiomatization
                   (\<lambda> (x, y). case (x, y) of (Timestep _ strict1 P', Timestep _ strict2 Q') \<Rightarrow>
                     Timestep s (disj strict1 strict2) (cExtChoice P' Q'))
                   (List.product xs_ts ys_ts)))
-        | (None, Some ys) \<Rightarrow> Some ys
-        | (Some xs, None) \<Rightarrow> Some xs
-        | (None, None) \<Rightarrow> None)" and
+        | _ \<Rightarrow> None \<comment> \<open>if either side diverges, the whole thing does\<close>)" and
   step_cyphyaction_cParallelAct'1[code]: (* no event to merge, synchronise timesteps and termination *)
     "step_cyphyaction timestep n [] s (cParallelAct' mrg cs P Q)
       = (case (map_option group_cyphysteps (step_cyphyaction timestep n [] s P),
@@ -344,8 +358,15 @@ axiomatization
                           \<comment> \<open>timesteps are synchronised, merging the state\<close>
                           @ (map (\<lambda>((s1, strict1, P'), (s2, strict2, Q')). 
                                 Timestep (mrg s s1 s2) (disj strict1 strict2) (cParallelAct' mrg cs P' Q'))
-                              (List.product P_timesteps Q_timesteps)))
-            | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
+                              (List.product P_timesteps Q_timesteps))
+                          \<comment> \<open>timesteps can synchronise with a termination, merging the state\<close>
+                          @ (map (\<lambda>((s1, strict1, P'), (s2)). 
+                                Timestep (mrg s s1 s2) strict1 (cParallelAct' mrg cs P' cSkip))
+                              (List.product P_timesteps Q_terms))
+                          @ (map (\<lambda>((s1), (s2, strict2, Q')). 
+                                Timestep (mrg s s1 s2) strict2 (cParallelAct' mrg cs cSkip Q'))
+                              (List.product P_terms Q_timesteps)))
+            | _ \<Rightarrow> None \<comment> \<open>if either side diverges, the whole thing does\<close>)" and
   step_cyphyaction_cParallelAct'2[code]: (* hidden events are unsynchronised, synchronise timesteps and termination *)
     "step_cyphyaction timestep n (Hidden depth te # t) s (cParallelAct' mrg cs P Q)
       = (case (map_option group_cyphysteps (step_cyphyaction timestep n (Hidden depth te # t) s P),
@@ -363,8 +384,15 @@ axiomatization
                           \<comment> \<open>timesteps are synchronised, merging the state\<close>
                           @ (map (\<lambda>((s1, strict1, P'), (s2, strict2, Q')). 
                                 Timestep (mrg s s1 s2) (disj strict1 strict2) (cParallelAct' mrg cs P' Q'))
-                              (List.product P_timesteps Q_timesteps)))
-            | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
+                              (List.product P_timesteps Q_timesteps))
+                          \<comment> \<open>timesteps can synchronise with a termination, merging the state\<close>
+                          @ (map (\<lambda>((s1, strict1, P'), (s2)). 
+                                Timestep (mrg s s1 s2) strict1 (cParallelAct' mrg cs P' cSkip))
+                              (List.product P_timesteps Q_terms))
+                          @ (map (\<lambda>((s1), (s2, strict2, Q')). 
+                                Timestep (mrg s s1 s2) strict2 (cParallelAct' mrg cs cSkip Q'))
+                              (List.product P_terms Q_timesteps)))
+            | _ \<Rightarrow> None \<comment> \<open>if either side diverges, the whole thing does\<close>)" and
   step_cyphyaction_cParallelAct'3[code]: (* visible events are handled depending on the synchronisation set, synchronise timesteps and termination *)
     "step_cyphyaction timestep n (Visible te # t) s (cParallelAct' mrg cs P Q)
       = (case (map_option group_cyphysteps (step_cyphyaction timestep n (Visible te # t) s P),
@@ -386,8 +414,15 @@ axiomatization
                           \<comment> \<open>timesteps are synchronised, merging the state\<close>
                           @ (map (\<lambda>((s1, strict1, P'), (s2, strict2, Q')). 
                                 Timestep (mrg s s1 s2) (disj strict1 strict2) (cParallelAct' mrg cs P' Q'))
-                              (List.product P_timesteps Q_timesteps)))
-            | _ \<Rightarrow> None \<comment> \<open>if either side errors out, the whole thing does\<close>)" and
+                              (List.product P_timesteps Q_timesteps))
+                          \<comment> \<open>timesteps can synchronise with a termination, merging the state\<close>
+                          @ (map (\<lambda>((s1, strict1, P'), (s2)). 
+                                Timestep (mrg s s1 s2) strict1 (cParallelAct' mrg cs P' cSkip))
+                              (List.product P_timesteps Q_terms))
+                          @ (map (\<lambda>((s1), (s2, strict2, Q')). 
+                                Timestep (mrg s s1 s2) strict2 (cParallelAct' mrg cs cSkip Q'))
+                              (List.product P_terms Q_timesteps)))
+            | _ \<Rightarrow> None \<comment> \<open>if either side diverges, the whole thing does\<close>)" and
   step_cyphyaction_cRec'[code]: (* unroll the loop at least enough to match the trace *)
     "step_cyphyaction timestep n t s (cRec' m FF)
       = step_cyphyaction timestep n t s (FF (m * n))" and
@@ -427,7 +462,7 @@ axiomatization
           step_cyphyaction timestep n (Visible te # t) s P)"
 
 lemma step_cyphyaction_cSkip[code]:
-    "step_cyphyaction timestep n t s cSkip = Some [Termination s, Timestep s False cSkip]"
+    "step_cyphyaction timestep n t s cSkip = Some [Termination s]"
   unfolding cSkip_def step_cyphyaction_cAssigns by simp
 
 section \<open>Lifting the operational semantics to trace checking\<close>
@@ -625,6 +660,7 @@ val trace_eval_cookie = (Trace_Evaluation.get, Trace_Evaluation.put, "Trace_Eval
 
 definition [code]: "code_real_of_rat n k \<equiv> Ratreal (rat_of_rational (Frct_integer (integer_of_nat n, integer_of_nat k)))"
 definition [code]: "code_real_inv k \<equiv> Ratreal (rat_of_rational (Frct_integer (1, integer_of_nat k)))"
+definition [code]: "unpack_trace_check_result \<equiv> map_option (map term_of_class.term_of o snd)"
 
 ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT breadth depth step_limit timestep_term has_tick spec impl = 
   let val actT = Type (@{type_name cyphyaction}, [evT, stT])
@@ -652,25 +688,33 @@ ML \<open>fun check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT 
       Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
+
+term cyphyaction_has_visible_trace_incremental_insts
+term "map_option (map term_of_class.term_of o snd)"
+ML \<open>@{term "map_option (map term_of_class.term_of o snd)"}\<close>
 ML \<open>fun check_cyphycircus_has_trace_incremental_insts ctxt stT evT breadth step_limit timestep_term trace has_tick P P_pred = 
   let val specT = fastype_of P
       val predT = fastype_of P_pred
-      val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.boolT, HOLogic.listT HOLogic.termT)])
+      val resT = Type (@{type_name option}, [HOLogic.mk_prodT (HOLogic.listT evT, HOLogic.boolT)])
       val cyphycircus_has_trace_incremental = Const (@{const_name cyphyaction_has_visible_trace_incremental_insts},
                 HOLogic.natT --> HOLogic.natT --> HOLogic.realT --> specT --> predT --> (HOLogic.listT evT) --> HOLogic.boolT --> stT
                   --> (HOLogic.listT evT) --> resT)
-      val unpack_result =  @{term "map_option snd :: (bool \<times> term list) option \<Rightarrow> term list option"}
+      val unpack_result =  Const (@{const_name unpack_trace_check_result}, resT --> Type (@{type_name option}, [HOLogic.listT HOLogic.termT]))
       val term = cyphycircus_has_trace_incremental
                   $ (HOLogic.mk_nat step_limit)
                   $ (HOLogic.mk_nat breadth)
                   $ timestep_term
                   $ P
                   $ P_pred
-                  $ (Const (@{const_name default}, stT)) (* initial state *)
                   $ (HOLogic.mk_list evT trace)
                   $ (if has_tick then @{term True} else @{term False})
+                  $ (Const (@{const_name default}, stT)) (* initial state *)
                   $ (HOLogic.mk_list evT [])
-  in Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
+  in if contains_hiding_name P then
+      Exn.Exn (TERM ("Specification contains hiding", 
+        [Const (@{const_name HOL.eq}, dummyT) $ Free ("specification", dummyT) $ P]))
+    else
+      Code_Runtime.dynamic_value_exn trace_eval_cookie ctxt NONE (Option.map o map) (unpack_result $ term) []
   end\<close>
 
 section \<open>testing the codegen\<close>
