@@ -1,18 +1,29 @@
 theory TestGen
-  imports Ax_CyPhyCircus Codegen tactics
+  imports Codegen Tactics
   keywords "generate_tests_rct" :: thy_decl
     and "RoboChart" "Mutants" "RoboWorld" "Iterations"
 begin
 
+setup \<open>
+  Attrib.setup @{binding rct_defs}
+    (Attrib.add_del
+      (Thm.declaration_attribute (fn thm => 
+         Named_Theorems.add_thm @{named_theorems rct_defs} thm #>
+         Named_Theorems.add_thm @{named_theorems cyphyaction_defs} thm))
+      (Thm.declaration_attribute (fn thm => 
+         Named_Theorems.del_thm @{named_theorems rct_defs} thm)))
+    "rct_defs declaration adding to cyphyaction_defs as well"
+\<close>
+
 section \<open>Declare options for the test generation algorithm\<close>
 
-ML \<open>fun code_real_of_rat n d = @{term code_real_of_rat} $ (HOLogic.mk_nat n) $ (HOLogic.mk_nat d)\<close>
+ML \<open>fun code_real_of_rat n d = @{term code_real_of_rat} $ (HOLogic.mk_number HOLogic.code_integerT n) $ (HOLogic.mk_number HOLogic.code_integerT d)\<close>
 ML \<open>fun parse_rat_term str =
       if String.member str #"/" then
         case String.tokens (equal #"/") str of
             [num, den] =>
               (case (Int.fromString num, Int.fromString den) of
-                  (SOME num, SOME den) => SOME (@{term code_real_of_rat} $ (HOLogic.mk_nat num) $ (HOLogic.mk_nat den))
+                  (SOME num, SOME den) => SOME (code_real_of_rat num den)
                 | _ => NONE)
             | _ => NONE
       else if String.member str #"." then
@@ -91,6 +102,14 @@ ML \<open>fun set_testgen_verbose_opt value pos ctxt =
         | NONE => error ("testgen_verbose must be a boolean value" ^ Position.here pos)\<close>
 ML \<open>fun get_testgen_verbose_opt ctxt = Config.get ctxt testgen_verbose_opt\<close>
 
+text \<open>testgen_loop_unroll_limit: maximum number of times to try unrolling loops\<close>
+ML \<open>val testgen_loop_unroll_limit_opt = Attrib.setup_config_int @{binding testgen_loop_unroll_limit} (K 10)\<close>
+ML \<open>fun set_testgen_loop_unroll_limit_opt value pos ctxt =
+      case Int.fromString value of
+          SOME n => Config.put testgen_loop_unroll_limit_opt n ctxt
+        | NONE => error ("testgen_loop_unroll_limit must be a positive integer" ^ Position.here pos)\<close>
+ML \<open>fun get_testgen_loop_unroll_limit_opt ctxt = Config.get ctxt testgen_loop_unroll_limit_opt\<close>
+
 ML \<open>fun parse_testgen_opts ctxt opts = fold (fn ((name, name_pos), (value, value_pos)) => fn ctxt =>
       case name of
         "testgen_step_limit" => set_testgen_step_limit_opt value value_pos ctxt
@@ -100,16 +119,9 @@ ML \<open>fun parse_testgen_opts ctxt opts = fold (fn ((name, name_pos), (value,
       | "testgen_consts_breadth" => set_testgen_consts_breadth_opt value value_pos ctxt
       | "testgen_timeout" => set_testgen_timeout_opt value value_pos ctxt
       | "testgen_verbose" => set_testgen_verbose_opt value value_pos ctxt
+      | "testgen_loop_unroll_limit" => set_testgen_loop_unroll_limit_opt value value_pos ctxt
       | _ => error ("unknown option: " ^ name ^ (Position.here name_pos))) opts ctxt\<close>
 
-
-section \<open>Proof methods for use by the test generation algorithm\<close>
-
-text \<open>rct_defs and rct_refine are defined in tactics.\<close>
-
-method rct_refine_by_trace = fail
-method rct_simp_counterexample =
-  (simp add: recursive_defs rec_sys_defs rct_defs)
 
 section \<open>Construction of counterexamples\<close>
 
@@ -139,36 +151,14 @@ ML \<open>fun obtainCounterexample' ctxt (spec : term) (impl : term) () =
                 (ty_name, evT :: stT :: _) =>
                   if ty_name = @{type_name "cyphyaction"} then (evT, stT) else raise type_error
               | _ => raise type_error
-          val ref_by = Const (@{const_name ref_by}, spec_type --> spec_type --> @{typ bool})
-          val statement = Thm.cterm_of ctxt (HOLogic.mk_Trueprop (ref_by $ spec $ impl))
-          val goal = Goal.init statement
-          val rct_simp_counterexample = Method.method ctxt (Token.make_src (@{method rct_simp_counterexample}, Position.none) [])
-          val goal_seq = rct_simp_counterexample ctxt [] (ctxt, goal)
-          val (spec, impl) =
-                case Seq.pull goal_seq of
-                    NONE =>
-                      (* proof method failed, try to construct counterexample with unsimplified spec and impl *)
-                      (spec, impl)
-                  | SOME (Seq.Result (_, goal), _) =>
-                      (* proof method succeeded, unpack new spec and impl *)
-                      (case Thm.prems_of goal of
-                          [] => (spec, impl)
-                        | subgoal::_ => 
-                            (case strip_comb (HOLogic.dest_Trueprop subgoal) of
-                                (Const (@{const_name ref_by}, _), [spec, impl]) => (spec, impl)
-                              | _ => (spec, impl)))
-                  | SOME (Seq.Error err, _) =>
-                      (* an error occurred, report it and try to construct counterexample with unsimplified spec and impl *)
-                      let val _ = warning (err ())
-                      in (spec, impl)
-                      end
           val trace_breadth = get_testgen_trace_breadth_opt ctxt
           val trace_depth = get_testgen_trace_depth_opt ctxt
           val step_limit = get_testgen_step_limit_opt ctxt
           val timestep = get_testgen_timestep_opt ctxt
+          val unroll = get_testgen_loop_unroll_limit_opt ctxt
           val check_result_no_tick = 
-            check_cyphycircus_trace_incremental_ref_by_no_hiding ctxt stT evT
-              trace_breadth trace_depth step_limit timestep false spec impl
+            check_cyphycircus_trace_incremental_ref_by_inferred ctxt stT evT
+              trace_breadth trace_depth step_limit unroll timestep false spec impl
       in
         case check_result_no_tick of
             Exn.Res (SOME terms) => SOME terms
@@ -198,7 +188,8 @@ ML \<open>fun term_to_name ctxt term =
 ML \<open>fun simplifiedOperands goal =
       case HOLogic.dest_Trueprop (Logic.strip_assums_concl (hd (Thm.prems_of goal))) of
           Const (@{const_name less_eq}, _) $ impl $ spec => (spec, impl)
-        | Const (@{const_name ref_by}, _) $ spec $ impl => (spec, impl)\<close>
+        | Const (@{const_name ref_by}, _) $ spec $ impl => (spec, impl)
+        | Const (@{const_name HOL.eq}, _) $ left $ right => (left, right)\<close>
 
 ML \<open>fun checkRefinement ctxt (spec : term) (impl : term) =
       let val spec_type = Term.fastype_of spec
@@ -253,18 +244,40 @@ ML \<open>fun checkTraceOf' ctxt (rwd : term) (rwd_pred : term) (trace : term li
             case dest_Type rwd_pred_type of
                 (@{type_name "fun"}, [inp, outp]) => if inp = inpT andalso outp = @{typ bool} then () else raise rwd_pred_type_error
               | _ => raise rwd_pred_type_error
+          val eq_term = Const (@{const_name HOL.eq}, rwd_type --> rwd_type --> @{typ bool})
+          val statement = Thm.cterm_of ctxt (HOLogic.mk_Trueprop (eq_term $ rwd $ (Const (@{const_name undefined}, rwd_type))))
+          val goal = Goal.init statement
+          val rct_normalise = Method.method ctxt (Token.make_src (@{method rct_normalise}, Position.none) [])
+          val goal_seq = rct_normalise ctxt [] (ctxt, goal)
+          val rwd' =
+                case Seq.pull goal_seq of
+                    NONE =>
+                      (* proof method failed, try to construct counterexample with unsimplified rwd *)
+                      ((warning "Normalisation of RoboWorld semantics failed") ; rwd)
+                  | SOME (Seq.Result (_, goal), _) =>
+                      (* proof method succeeded, unpack new rwd *)
+                      (case Thm.prems_of goal of
+                          [] => rwd
+                        | subgoal::_ => 
+                            (case strip_comb (HOLogic.dest_Trueprop subgoal) of
+                                (Const (@{const_name HOL.eq}, _), [left, _]) => left
+                              | _ => (rwd)))
+                  | SOME (Seq.Error err, _) =>
+                      (* an error occurred, report it and try to construct counterexample with unsimplified rwd *)
+                      (warning (err ()) ; rwd)
           val consts_breadth = get_testgen_consts_breadth_opt ctxt
           val step_limit = get_testgen_step_limit_opt ctxt
           val timestep = get_testgen_timestep_opt ctxt
-          val check_result_no_tick =  check_cyphycircus_has_trace_incremental_insts ctxt stT evT consts_breadth step_limit timestep trace false rwd rwd_pred
+          val unroll = get_testgen_loop_unroll_limit_opt ctxt
+          val check_result_no_tick =  check_cyphycircus_has_trace_incremental_inferred_insts ctxt stT evT consts_breadth step_limit unroll timestep trace false rwd' rwd_pred
       in case check_result_no_tick of
             Exn.Res (SOME terms) => SOME terms
           | Exn.Res NONE => NONE
           | Exn.Exn e => (warning (exnMessage e); NONE)
       end\<close>
 
-ML \<open>fun checkTraceOf ctxt (rwd : term) (rwd_pred : term) (trace : term list) = 
-      Timeout.apply (Time.fromMilliseconds (get_testgen_timeout_opt ctxt)) (checkTraceOf' ctxt rwd rwd_pred trace) ()
+ML \<open>fun checkTraceOf ctxt (rwd : term) (rwd_pred : term) (trace : term list) = checkTraceOf' ctxt rwd rwd_pred trace ()
+      (*Timeout.apply (Time.fromMilliseconds (get_testgen_timeout_opt ctxt)) (checkTraceOf' ctxt rwd rwd_pred trace) ()*)
       handle Timeout.TIMEOUT _ => (warning "checking timed out"; NONE)\<close>
 
 section \<open>Testing algorithm\<close>
