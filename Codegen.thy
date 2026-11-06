@@ -17,6 +17,22 @@ lemma pfun_lookup_map_code [code]:
   "pfun_lookup (pfun_of_map f) k = f k"
   by auto
 
+lemma integer_power_code[code]:
+  "integer_power x n = (if n \<le> 0 then 1 else x * integer_power x (n-1))"
+proof -
+  obtain k :: nat where k_def: "k = nat_of_integer n"
+    by blast
+  then have k_minus_1_def: "n > 0 \<Longrightarrow> k-1 = nat_of_integer (n-1)"
+    by (induct n, auto, metis Num.of_nat_simps(3) Suc_pred Zero_not_Suc cancel_ab_semigroup_add_class.add_diff_cancel_left'
+        integer_of_int_eq_of_int nat_eq_iff2 nat_int nat_of_integer.abs_eq of_int_1 of_int_diff zero_less_nat_eq)
+  have "x ^ k = (if k = 0 then 1 else x * x ^ (k-1))"
+    by (induct k, auto)
+  then show ?thesis
+    unfolding integer_power_def 
+    by (smt cr_integer_def eq_OO k_def k_minus_1_def less_eq_integer.rep_eq nat_of_integer.rep_eq
+        nat_of_integer_non_positive not_le pcr_integer_def zero_integer.transfer zero_less_nat_eq)
+qed
+
 subsection \<open>Additional support for real numbers\<close>
 
 lemma Fract_code [code]:
@@ -522,6 +538,16 @@ syntax
 translations
   "_ch_enum_func (_chan c)" \<rightleftharpoons> "CONST csbasic2 c"
   "_ch_enum_func (_chans c cs)" \<rightleftharpoons> "CONST csinsert2 c (_ch_enum_func cs)"
+
+lemma csbasic_csbasic2_eq:
+  assumes "wb_prism c"
+  shows "csbasic c = csbasic2 c"
+  unfolding csbasic_def csbasic2_def by (auto simp add: assms Option.is_none_def domIff wb_prism.range_build)
+
+lemma csinsert_cs_insert2_eq:
+  assumes "wb_prism c"
+  shows "csinsert c S = csinsert2 c S"
+  unfolding csinsert_def csinsert2_def by (auto simp add: assms csbasic_csbasic2_eq)
 
 code_datatype Collect List.set List.coset
 lemmas [code del] = sym[OF Set.Collect_disj_eq]
@@ -1483,10 +1509,6 @@ fun map_cyphystep_continuation :: "(('e, 's) cyphyast \<Rightarrow> ('e, 's) cyp
 fun rapply_alist :: "('a \<times> 'b) list \<Rightarrow> 'b \<Rightarrow> 'a list" where
   "rapply_alist [] _ = []"
 | "rapply_alist ((x, y) # xs) b = (if fast_equal b y then [x] else []) @ rapply_alist xs b"
-
-declare [[code_runtime_trace]]
-value "rapply_alist :: (nat \<times> nat) list \<Rightarrow> nat \<Rightarrow> nat list"
-
 
 fun group_cyphysteps :: "('e, 's) cyphystep list  \<Rightarrow>
     (bool \<times> 's) list
@@ -2535,8 +2557,6 @@ alphabet bar =
 
 record_default bar
 
-declare [[code_runtime_trace=false]]
-
 ML \<open>fun repeat _ 0 = []
       | repeat x n = x :: repeat x (n-1)\<close>
 
@@ -2577,7 +2597,6 @@ abbreviation "visibility_traces_of P \<equiv>
 
 subsection \<open>Test 1: @{term "a\<^bold>.1 \<rightarrow> a\<^bold>!2 \<rightarrow> Skip \<sqsubseteq> a\<^bold>.1 \<rightarrow> a\<^bold>!0 \<rightarrow> Skip"} gives @{term "[a_C 1, a_C 0]"}\<close>
 
-declare [[code_runtime_trace]]
 ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{context}
         fun traceToString trace = String.concatWith " \<rightarrow> " (map term_string trace)
     in timeit 
@@ -2855,5 +2874,18 @@ ML \<open>let val term_string = Pretty.pure_string_of o Syntax.pretty_term @{con
 hide_type foo bar
 
 hide_const n v time a b
+
+(*section \<open>Allowing code generation to happen ahead-of-time\<close>
+
+code_reflect CyPhyAction_Codegen
+  datatypes cyphyaction = _
+    and nat
+    and int = _
+    and real = _
+    and rat = _
+    and prism_ext = _
+  functions nat integer_of_nat times_nat_inst.times_nat plus_nat_inst.plus_nat minus_nat_inst.minus_nat zero_nat_inst.zero_nat one_nat_inst.one_nat
+*)    
+
 
 end

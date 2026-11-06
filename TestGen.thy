@@ -344,10 +344,10 @@ ML \<open>fun testGeneration ctxt (rct: term) (muts: term list) (rwd: term) (rwd
                         (fts, TraceSet.insert counterexamplePrefix its, ctxt)))
                 val (fts, its, ctxt) = TraceSet.fold checkTrace traces (feasibleTrs, infeasibleTrs, ctxt)
                 val newMutsToCheck = TermSet.subtract failMuts (TermSet.subtract refMuts mutsToCheck)
-            in if i < n orelse TermSet.is_empty newMutsToCheck then testGenLoop ctxt newMutsToCheck refMuts failMuts fts its (i+1) else (refMuts, failMuts, fts, its, ctxt)
+            in if i >= n orelse TermSet.is_empty newMutsToCheck then (refMuts, failMuts, fts, its, ctxt) else testGenLoop ctxt newMutsToCheck refMuts failMuts fts its (i+1)
             end)
           val (refMuts, failMuts, fts, its, ctxt) =
-            testGenLoop ctxt (TermSet.make muts) TermSet.empty TermSet.empty TraceSet.empty TraceSet.empty n
+            testGenLoop ctxt (TermSet.make muts) TermSet.empty TermSet.empty TraceSet.empty TraceSet.empty 1
       in
         writeln "Feasible Traces Generated:";
         map (fn trace => (writeln ("  " ^ (traceToString ctxt trace)))) (TraceSet.dest fts);
