@@ -2361,19 +2361,37 @@ structure String_List_Evaluation = Proof_Data
 val string_list_eval_cookie = (String_List_Evaluation.get, String_List_Evaluation.put, "String_List_Evaluation.put");
 \<close>
 
+
+ML \<open>Typtab.insert (op =)\<close>
+ML \<open>
+structure Chan_Names_Cache = Proof_Data
+(
+  type T = string list Typtab.table Unsynchronized.ref;
+  val empty = Unsynchronized.ref Typtab.empty ;
+  fun init _ = Unsynchronized.ref Typtab.empty;
+);\<close>
+
+ML \<open>Chan_Names_Cache.get\<close>
+
 definition chan_names :: "('a :: chantyperep) itself \<Rightarrow> String.literal list" where
   "chan_names typ =  map (chan_name) (chantyperep typ)"
 
-ML \<open>fun chan_names ctxt typ =
-      let val chan_names_term = Const (@{const_name chan_names}, Term.itselfT typ --> HOLogic.listT HOLogic.literalT) $ (Logic.mk_type typ)
-          val raw_chan_names = Code_Runtime.dynamic_value_strict string_list_eval_cookie ctxt NONE (fn f => map (HOLogic.dest_string o f o HOLogic.mk_string)) chan_names_term []
-          val consts = (#constants o Consts.dest o Proof_Context.consts_of) ctxt
-          fun const_is_prism (_, (Type (@{type_name prism_ext}, [_, srcT, _]), _)) = (srcT = typ)
-            | const_is_prism _ = false
-          val prism_consts = filter const_is_prism consts
-          fun is_chan_name (name, _) = member (=) raw_chan_names (Long_Name.base_name name)
-          val chan_consts = filter is_chan_name prism_consts
-      in map fst chan_consts
+ML \<open>fun chan_names ctxt typ = 
+      let val chan_names_table = Chan_Names_Cache.get ctxt
+      in case Typtab.lookup (!chan_names_table) typ of
+            SOME names => names
+          | NONE =>
+              let val chan_names_term = Const (@{const_name chan_names}, Term.itselfT typ --> HOLogic.listT HOLogic.literalT) $ (Logic.mk_type typ)
+                  val raw_chan_names = Code_Runtime.dynamic_value_strict string_list_eval_cookie ctxt NONE (fn f => map (HOLogic.dest_string o f o HOLogic.mk_string)) chan_names_term []
+                  val consts = (#constants o Consts.dest o Proof_Context.consts_of) ctxt
+                  fun const_is_prism (_, (Type (@{type_name prism_ext}, [_, srcT, _]), _)) = (srcT = typ)
+                    | const_is_prism _ = false
+                  val prism_consts = filter const_is_prism consts
+                  fun is_chan_name (name, _) = member (op =) raw_chan_names (Long_Name.base_name name)
+                  val chan_consts = filter is_chan_name prism_consts
+                  val names = map fst chan_consts
+              in Unsynchronized.change chan_names_table (Typtab.insert (op =) (typ, names)); names
+              end
       end\<close>
 ML \<open>fun is_allowed_prism ctxt term =
       case (SOME (fastype_of term) handle TERM _ => NONE) of
@@ -2382,14 +2400,14 @@ ML \<open>fun is_allowed_prism ctxt term =
           (case term of
             (Const (@{const_name chinst1}, _)) $ subprism $ _ => is_allowed_prism ctxt subprism
           | (Const (@{const_name chinstn}, _)) $ subprism $ _ => is_allowed_prism ctxt subprism
-          | Const (prism, _) => Library.member (=) (chan_names ctxt srcT) prism
+          | Const (prism, _) => Library.member (op =) (chan_names ctxt srcT) prism
           | _ => false)
       | _ => true (* if the term isn't a prism, it doesn't matter how it is constructed *)\<close>
 
 ML \<open>fun contains_forbidden_prism ctxt = Term.exists_subterm (not o is_allowed_prism ctxt)\<close>
 ML \<open>fun contains_hiding_name t = Term.exists_Const (fn (c, _) => c = @{const_name cHide}) t\<close>
 
-subsection \<open>\<close>
+subsection \<open>ML functions for the checks\<close>
 
 ML \<open>
 structure Trace_Evaluation = Proof_Data
