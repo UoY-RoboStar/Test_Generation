@@ -17,7 +17,8 @@ subsection \<open> Model \<close>
 
 	
 	
-datatype NIDS_Navigation_small_navigation = 
+(* Changed datatype to enumtype because code generation needs NIDS_Navigation_small_navigation to instantiate enum. *)
+enumtype NIDS_Navigation_small_navigation =
 	NID_i0_Navigation_small_navigation | 
 	NID_WaitTarget_Navigation_small_navigation | 
 	NID_WaitForPose_Navigation_small_navigation | 
