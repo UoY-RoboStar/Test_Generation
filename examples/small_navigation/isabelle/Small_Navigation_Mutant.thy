@@ -11,7 +11,7 @@ setup \<open>fn thy =>
     val shared = map (prefix "Small_Navigation.Navigation.")
       ["enteredSS_in_stmbd_Navigation_small_navigation",
        "shared_variable_events_in_stmbd_Navigation_small_navigation",
-       "project_triggers_Navigation_small_navigation"]
+       "renameTriggerEvents_Navigation_small_navigation"]
   in
     fold (Sign.hide_const false)
       (map #1 (#constants (Consts.dest (Sign.consts_of thy)))
@@ -252,23 +252,22 @@ where
                                              	  ((n = NID_f0_Navigation_small_navigation) \<^bold>& ((terminate \<rightarrow> Skip))))))))) "
 
 definition ncCoreBehaviour_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" ncCoreBehaviour_Navigation_small_navigation = 	((cRename (cCompleteRenaming (csbasic (share) \<times> csbasic (share))) ((cRename (cCompleteRenaming ((csbasic (interrupt_i0_Navigation_small_navigation) \<times> csbasic (internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitTarget_Navigation_small_navigation) \<times> csbasic (setTarget__in\<^bold>.NID_WaitTarget_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitForPose_Navigation_small_navigation) \<times> csbasic (globalpose__in\<^bold>.NID_WaitForPose_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_CheckPosition_Navigation_small_navigation) \<times> csbasic (internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_CheckPosition_Navigation_small_navigation) \<times> csbasic (internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitMoveApplied_Navigation_small_navigation) \<times> csbasic (OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitStopApplied_Navigation_small_navigation) \<times> csbasic (OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_f0_Navigation_small_navigation) \<times> csbasic (interrupt_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitMoveApplied_Navigation_small_navigation) \<times> csbasic (interrupt_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitTarget_Navigation_small_navigation) \<times> csbasic (interrupt_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitForPose_Navigation_small_navigation) \<times> csbasic (interrupt_Navigation_small_navigation)) \<union>
-                                                   	 (csbasic (interrupt_WaitStopApplied_Navigation_small_navigation) \<times> csbasic (interrupt_Navigation_small_navigation)))) (composeNodes_Navigation_small_navigation))))
+" ncCoreBehaviour_Navigation_small_navigation = 	((cRename \<lbrace> share \<mapsto> share \<rbrace> ((cRename
+                                                   	 (\<lbrace> interrupt_i0_Navigation_small_navigation \<mapsto> internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation,
+                                                   	    interrupt_CheckPosition_Navigation_small_navigation \<mapsto> internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation,
+                                                   	    interrupt_WaitMoveApplied_Navigation_small_navigation \<mapsto> OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation,
+                                                   	    interrupt_WaitStopApplied_Navigation_small_navigation \<mapsto> OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation,
+                                                   	    interrupt_f0_Navigation_small_navigation \<mapsto> interrupt_Navigation_small_navigation, interrupt_WaitMoveApplied_Navigation_small_navigation \<mapsto> interrupt_Navigation_small_navigation,
+                                                   	    interrupt_WaitTarget_Navigation_small_navigation \<mapsto> interrupt_Navigation_small_navigation, interrupt_WaitForPose_Navigation_small_navigation \<mapsto> interrupt_Navigation_small_navigation,
+                                                   	    interrupt_WaitStopApplied_Navigation_small_navigation \<mapsto> interrupt_Navigation_small_navigation \<rbrace> \<union>
+                                                   	  \<lbrace> interrupt_WaitTarget_Navigation_small_navigation \<mapsto> setTarget__in (NID_WaitTarget_Navigation_small_navigation, v) | v. True \<rbrace> \<union>
+                                                   	  \<lbrace> interrupt_WaitForPose_Navigation_small_navigation \<mapsto> globalpose__in (NID_WaitForPose_Navigation_small_navigation, v) | v. True \<rbrace>)
+                                                   	 (composeNodes_Navigation_small_navigation))))
                                                    	  \<lbrakk> \<^bold>0 | \<lbrace> exit_Navigation_small_navigation,enter_WaitForPose_Navigation_small_navigation,internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation,internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation,setTarget__in\<^bold>.NID_WaitTarget_Navigation_small_navigation,enter_f0_Navigation_small_navigation,globalpose__in\<^bold>.NID_WaitForPose_Navigation_small_navigation,OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation,interrupt_Navigation_small_navigation,enter_i0_Navigation_small_navigation,enter_WaitStopApplied_Navigation_small_navigation,OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation,share,terminate,enter_WaitMoveApplied_Navigation_small_navigation,exited_Navigation_small_navigation,enter_WaitTarget_Navigation_small_navigation,enter_CheckPosition_Navigation_small_navigation \<rbrace> | \<^bold>0 \<rbrakk>
-                                                   	  (cRename (cCompleteRenaming (csbasic (share) \<times> csbasic (share))) ((enter_i0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_i0_Navigation_small_navigation))))) "
+                                                   	  (cRename \<lbrace> share \<mapsto> share \<rbrace> ((enter_i0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_i0_Navigation_small_navigation))))) "
 
 definition ncBehaviour_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" ncBehaviour_Navigation_small_navigation = 	(cRename (cCompleteRenaming project_triggers_Navigation_small_navigation) ((ncCoreBehaviour_Navigation_small_navigation \<Zhide> \<lbrace> enter_i0_Navigation_small_navigation,enter_WaitTarget_Navigation_small_navigation,enter_WaitForPose_Navigation_small_navigation,enter_CheckPosition_Navigation_small_navigation,enter_WaitMoveApplied_Navigation_small_navigation,enter_WaitStopApplied_Navigation_small_navigation,enter_f0_Navigation_small_navigation,exit_Navigation_small_navigation,exited_Navigation_small_navigation,internal__Navigation_small_navigation \<rbrace>))) "
+" ncBehaviour_Navigation_small_navigation = 	(cRename renameTriggerEvents_Navigation_small_navigation ((ncCoreBehaviour_Navigation_small_navigation \<Zhide> \<lbrace> enter_i0_Navigation_small_navigation,enter_WaitTarget_Navigation_small_navigation,enter_WaitForPose_Navigation_small_navigation,enter_CheckPosition_Navigation_small_navigation,enter_WaitMoveApplied_Navigation_small_navigation,enter_WaitStopApplied_Navigation_small_navigation,enter_f0_Navigation_small_navigation,exit_Navigation_small_navigation,exited_Navigation_small_navigation,internal__Navigation_small_navigation \<rbrace>))) "
 
 definition machineBody_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " machineBody_Navigation_small_navigation = 	((ncBehaviour_Navigation_small_navigation
@@ -307,7 +306,7 @@ definition sharedVarMemory_Navigation_small_navigation :: "(mychan, unit) cyphya
 " sharedVarMemory_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
 
 definition stm_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" stm_Navigation_small_navigation = 	((((cRename (cCompleteRenaming ({})) (((stateful_Navigation_small_navigation \<Zhide> \<lbrace> terminate \<rbrace>);; (SSTOP \<triangle> (terminate \<rightarrow> Skip)))))
+" stm_Navigation_small_navigation = 	((((cRename ({} :: mychan \<leftrightarrow> mychan) (((stateful_Navigation_small_navigation \<Zhide> \<lbrace> terminate \<rbrace>);; (SSTOP \<triangle> (terminate \<rightarrow> Skip)))))
                                        	  \<lbrakk> \<^bold>0 | shared_variable_events_in_stmbd_Navigation_small_navigation | \<^bold>0 \<rbrakk>
                                        	  Skip)
                                        	  \<lbrakk> \<^bold>0 | \<lbrace> terminate \<rbrace> | \<^bold>0 \<rbrakk>
