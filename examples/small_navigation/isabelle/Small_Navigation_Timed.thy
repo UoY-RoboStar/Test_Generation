@@ -141,9 +141,10 @@ definition "cTock_mychan = build\<^bsub>tock\<^esub> ()"
 instance ..
 end
 
-(* Added for the timed semantics: from here the CSP operators are the timed operators of Ax_CyPhyCircus, as
-   in a timed section of FDR (FDR manual, Timed Sections), so each process below is a TimedCSPProcess of the
-   reference manual, Section 4.2. Sequential composition, hiding and renaming are not affected. *)
+(* Added for the timed semantics: from here Skip, Stop and the parallel compositions are the timed operators
+   of Ax_CyPhyCircus, as in a timed section of FDR (FDR manual, Timed Sections). Prefix, choice, guard and
+   interrupt are not changed, so a prefix by itself has no tock: time passes in cTPrefix, in SSTOP and in
+   cInitialTimeout1. *)
 unbundle Timed_Section
 
 (* namespace to avoid conflict with mutant/original robochart model *)
@@ -226,12 +227,19 @@ definition renameTriggerEvents_Navigation_small_navigation :: "(mychan \<times> 
 
 (* SSTOP is defined as an lfp directly, since recursive cannot unfold a block that refers to
    a process from an earlier recursive block. SSTOP_unfold restates the original equation. *)
+(* Changed share \<rightarrow> X to cTPrefix (share \<rightarrow> X) in SSTOP for the timed semantics (reference manual, Definition
+   C.2.1, SStop = share \<rightarrow> SStop): cTPrefix P is P, or a tock and the same again, so SSTOP lets time pass.
+   SSTOP_unfold and its proof change with it. *)
 definition SSTOP :: "(mychan, unit) cyphyaction" where
-"SSTOP = (\<nu> X. share \<rightarrow> X)"
+"SSTOP = (\<nu> X. cTPrefix (share \<rightarrow> X))"
 
-(* Changed cSync_mono to cTSync_mono for the timed semantics: the prefix is the timed prefix. *)
-lemma SSTOP_unfold: "SSTOP = share  \<rightarrow>  SSTOP"
-  unfolding SSTOP_def by (rule lfp_unfold, rule monoI, rule cTSync_mono, assumption)
+lemma SSTOP_unfold: "SSTOP = cTPrefix (share  \<rightarrow>  SSTOP)"
+  unfolding SSTOP_def by (rule lfp_unfold, rule monoI, rule cTPrefix_mono, rule cSync_mono, assumption)
+
+(* Added SSTOPU for the timed semantics: SStop without tock. SSTOPU \<triangle> P is the manual's
+   SStop \<triangle> (Stop\<^sub>U \<box> P): no time passes before the first event of P. *)
+definition SSTOPU :: "(mychan, unit) cyphyaction" where
+"SSTOPU = (\<nu> X. share \<rightarrow> X)"
 
 definition Termination_i0_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " Termination_i0_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
@@ -255,8 +263,11 @@ definition Termination_WaitTarget_Navigation_small_navigation :: "(mychan, unit)
 definition During_WaitTarget_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " During_WaitTarget_Navigation_small_navigation = 	((Skip;; SSTOP) \<triangle> (interrupt_WaitTarget_Navigation_small_navigation \<rightarrow> Skip)) "
 
+(* Changed P to cTPrefix P, here and below, for the timed semantics, where P is a prefix or a choice of
+   prefixes that is not directly under SSTOP \<triangle> or cInitialTimeout1: time passes until the first event
+   of P (FDR manual, Timed Sections, X = tock -> X [] a -> P). *)
 definition Behaviour_WaitTarget_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" Behaviour_WaitTarget_Navigation_small_navigation = 	(entered_WaitTarget_Navigation_small_navigation \<rightarrow> During_WaitTarget_Navigation_small_navigation) "
+" Behaviour_WaitTarget_Navigation_small_navigation = 	(cTPrefix (entered_WaitTarget_Navigation_small_navigation \<rightarrow> During_WaitTarget_Navigation_small_navigation)) "
 
 recursive
   Inactive_WaitTarget_Navigation_small_navigation :: "(mychan, unit) cyphyaction" and
@@ -272,7 +283,7 @@ where
 
 " Active_WaitTarget_Navigation_small_navigation = 	(Skip;; (Behaviour_WaitTarget_Navigation_small_navigation;; Exiting_WaitTarget_Navigation_small_navigation)) " |
 
-" Exiting_WaitTarget_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitTarget_Navigation_small_navigation))) "
+" Exiting_WaitTarget_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (cTPrefix (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitTarget_Navigation_small_navigation)))) "
 
 definition Termination_WaitForPose_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " Termination_WaitForPose_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
@@ -281,7 +292,7 @@ definition During_WaitForPose_Navigation_small_navigation :: "(mychan, unit) cyp
 " During_WaitForPose_Navigation_small_navigation = 	((Skip;; SSTOP) \<triangle> (interrupt_WaitForPose_Navigation_small_navigation \<rightarrow> Skip)) "
 
 definition Behaviour_WaitForPose_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" Behaviour_WaitForPose_Navigation_small_navigation = 	(entered_WaitForPose_Navigation_small_navigation \<rightarrow> During_WaitForPose_Navigation_small_navigation) "
+" Behaviour_WaitForPose_Navigation_small_navigation = 	(cTPrefix (entered_WaitForPose_Navigation_small_navigation \<rightarrow> During_WaitForPose_Navigation_small_navigation)) "
 
 recursive
   Inactive_WaitForPose_Navigation_small_navigation :: "(mychan, unit) cyphyaction" and
@@ -297,7 +308,7 @@ where
 
 " Active_WaitForPose_Navigation_small_navigation = 	(Skip;; (Behaviour_WaitForPose_Navigation_small_navigation;; Exiting_WaitForPose_Navigation_small_navigation)) " |
 
-" Exiting_WaitForPose_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitForPose_Navigation_small_navigation))) "
+" Exiting_WaitForPose_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (cTPrefix (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitForPose_Navigation_small_navigation)))) "
 
 definition Termination_CheckPosition_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " Termination_CheckPosition_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
@@ -322,7 +333,7 @@ definition During_WaitMoveApplied_Navigation_small_navigation :: "(mychan, unit)
 " During_WaitMoveApplied_Navigation_small_navigation = 	((Skip;; SSTOP) \<triangle> (interrupt_WaitMoveApplied_Navigation_small_navigation \<rightarrow> Skip)) "
 
 definition Behaviour_WaitMoveApplied_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" Behaviour_WaitMoveApplied_Navigation_small_navigation = 	(entered_WaitMoveApplied_Navigation_small_navigation \<rightarrow> During_WaitMoveApplied_Navigation_small_navigation) "
+" Behaviour_WaitMoveApplied_Navigation_small_navigation = 	(cTPrefix (entered_WaitMoveApplied_Navigation_small_navigation \<rightarrow> During_WaitMoveApplied_Navigation_small_navigation)) "
 
 recursive
   Inactive_WaitMoveApplied_Navigation_small_navigation :: "(mychan, unit) cyphyaction" and
@@ -338,7 +349,7 @@ where
 
 " Active_WaitMoveApplied_Navigation_small_navigation = 	(Skip;; (Behaviour_WaitMoveApplied_Navigation_small_navigation;; Exiting_WaitMoveApplied_Navigation_small_navigation)) " |
 
-" Exiting_WaitMoveApplied_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitMoveApplied_Navigation_small_navigation))) "
+" Exiting_WaitMoveApplied_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (cTPrefix (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitMoveApplied_Navigation_small_navigation)))) "
 
 definition Termination_WaitStopApplied_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " Termination_WaitStopApplied_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
@@ -347,7 +358,7 @@ definition During_WaitStopApplied_Navigation_small_navigation :: "(mychan, unit)
 " During_WaitStopApplied_Navigation_small_navigation = 	((Skip;; SSTOP) \<triangle> (interrupt_WaitStopApplied_Navigation_small_navigation \<rightarrow> Skip)) "
 
 definition Behaviour_WaitStopApplied_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" Behaviour_WaitStopApplied_Navigation_small_navigation = 	(entered_WaitStopApplied_Navigation_small_navigation \<rightarrow> During_WaitStopApplied_Navigation_small_navigation) "
+" Behaviour_WaitStopApplied_Navigation_small_navigation = 	(cTPrefix (entered_WaitStopApplied_Navigation_small_navigation \<rightarrow> During_WaitStopApplied_Navigation_small_navigation)) "
 
 recursive
   Inactive_WaitStopApplied_Navigation_small_navigation :: "(mychan, unit) cyphyaction" and
@@ -363,7 +374,7 @@ where
 
 " Active_WaitStopApplied_Navigation_small_navigation = 	(Skip;; (Behaviour_WaitStopApplied_Navigation_small_navigation;; Exiting_WaitStopApplied_Navigation_small_navigation)) " |
 
-" Exiting_WaitStopApplied_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitStopApplied_Navigation_small_navigation))) "
+" Exiting_WaitStopApplied_Navigation_small_navigation = 	((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (Skip;; (cTPrefix (exited_Navigation_small_navigation \<rightarrow> Inactive_WaitStopApplied_Navigation_small_navigation)))) "
 
 definition Termination_f0_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " Termination_f0_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
@@ -381,13 +392,13 @@ where
 
 " Activation_f0_Navigation_small_navigation = 	(enter_f0_Navigation_small_navigation \<rightarrow> Entering_f0_Navigation_small_navigation) " |
 
-" Entering_f0_Navigation_small_navigation = 	(entered_f0_Navigation_small_navigation \<rightarrow> Active_f0_Navigation_small_navigation) " |
+" Entering_f0_Navigation_small_navigation = 	(cTPrefix (entered_f0_Navigation_small_navigation \<rightarrow> Active_f0_Navigation_small_navigation)) " |
 
 " Active_f0_Navigation_small_navigation = 	(SSTOP \<triangle> (Termination_f0_Navigation_small_navigation
                                           	  \<box>
                                           	  (interrupt_f0_Navigation_small_navigation \<rightarrow> Interrupted_f0_Navigation_small_navigation))) " |
 
-" Interrupted_f0_Navigation_small_navigation = 	(SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> (exited_Navigation_small_navigation \<rightarrow> InactiveFn_f0_Navigation_small_navigation))) "
+" Interrupted_f0_Navigation_small_navigation = 	(SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> (cTPrefix (exited_Navigation_small_navigation \<rightarrow> InactiveFn_f0_Navigation_small_navigation)))) "
 
 (* Changed \<lbrakk> | cs | \<rbrakk> to \<lbrakk> \<^bold>0 | cs | \<^bold>0 \<rbrakk>, here and below, because Isabelle cannot parse the omitted name sets. *)
 definition composeNodes_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
@@ -405,35 +416,41 @@ definition composeNodes_Navigation_small_navigation :: "(mychan, unit) cyphyacti
                                              	  \<lbrakk> \<^bold>0 | \<lbrace> share,terminate \<rbrace> | \<^bold>0 \<rbrakk> 
                                                 	  Inactive_WaitTarget_Navigation_small_navigation) "
 
-(* Changed Trans for the timed semantics (reference manual, Rule 82): the choice over the transitions and share,
-   T, is cInitialTimeout1 T (Trans(n)), where the manual has (T \<triangleright>\<^sub>1 Skip); Trans, so when a time unit passes
-   without a transition the variables are read again and the guards evaluated anew; the interrupt and terminate
-   branches stay outside the timeout. cInitialTimeout1 P Q is P \<triangleright>\<^sub>1 Q: the first event of P resolves it, and after
-   one time unit without an event it behaves as Q. The branches of T continue with Trans as in the untimed
-   model, so Trans(n) follows the time unit only. Each read of a guard variable is in choice with StopU, as in
-   the manual, Stop\<^sub>U \<box> get_v?x \<rightarrow> ... (Rules 90 and 91): no time passes before the read. *)
+(* Changed Trans for the timed semantics (reference manual, Rule 82). The manual has
+   readStateA(v, ((T \<triangleright>\<^sub>1 Skip); Trans) \<box> I), with T the choice over the transitions and share and I the
+   interrupt and terminate branches. The reads are under SSTOPU: no time passes before them (Rules 90 and
+   91). cInitialTimeout1 P Q is P \<triangleright>\<^sub>1 Q for P written without tock: the first event of P resolves it, and after
+   one time unit without an event it behaves as Q. P is T \<box> I, since the time unit does not resolve the choice
+   with I, and Q is Trans(n) \<box> I: the variables are read again and the guards evaluated anew, or one of the
+   branches of I is taken. The branches of T continue with Trans as in the untimed model, so Trans(n) follows
+   the time unit only. *)
 recursive
   Trans_Navigation_small_navigation :: "NIDS_Navigation_small_navigation \<Rightarrow> (mychan, unit) cyphyaction"
 where
-" Trans_Navigation_small_navigation(n) = 	((SSTOP \<triangle> (StopU \<box> (get_position_Navigation_small_navigation\<^bold>?position_Navigation_small_navigation \<rightarrow> (StopU \<box> (get_target_Navigation_small_navigation\<^bold>?target_Navigation_small_navigation \<rightarrow> (assume True (Trans_Navigation_small_navigation(n)) ((cInitialTimeout1 (((((((((n = NID_i0_Navigation_small_navigation) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation \<rightarrow> Skip);; (enter_WaitTarget_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitTarget_Navigation_small_navigation)))))
+" Trans_Navigation_small_navigation(n) = 	((SSTOPU \<triangle> (get_position_Navigation_small_navigation\<^bold>?position_Navigation_small_navigation \<rightarrow> (get_target_Navigation_small_navigation\<^bold>?target_Navigation_small_navigation \<rightarrow> (assume True (Trans_Navigation_small_navigation(n)) (cInitialTimeout1 ((((((((((n = NID_i0_Navigation_small_navigation) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation \<rightarrow> Skip);; (cTPrefix (enter_WaitTarget_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitTarget_Navigation_small_navigation))))))
                                          	  \<box>
-                                         	  ((n = NID_WaitTarget_Navigation_small_navigation) \<^bold>& (((setTarget__in\<^bold>.NID_WaitTarget_Navigation_small_navigation\<^bold>?target_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (set_target_Navigation_small_navigation\<^bold>!target_Navigation_small_navigation \<rightarrow> Skip)));; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (enter_WaitForPose_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitForPose_Navigation_small_navigation)))))))))
+                                         	  ((n = NID_WaitTarget_Navigation_small_navigation) \<^bold>& (((setTarget__in\<^bold>.NID_WaitTarget_Navigation_small_navigation\<^bold>?target_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (set_target_Navigation_small_navigation\<^bold>!target_Navigation_small_navigation \<rightarrow> Skip)));; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (cTPrefix (enter_WaitForPose_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitForPose_Navigation_small_navigation))))))))))
                                          	  \<box>
-                                         	  ((n = NID_WaitForPose_Navigation_small_navigation) \<^bold>& (((globalpose__in\<^bold>.NID_WaitForPose_Navigation_small_navigation\<^bold>?position_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (set_position_Navigation_small_navigation\<^bold>!position_Navigation_small_navigation \<rightarrow> Skip)));; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (enter_CheckPosition_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_CheckPosition_Navigation_small_navigation)))))))))
+                                         	  ((n = NID_WaitForPose_Navigation_small_navigation) \<^bold>& (((globalpose__in\<^bold>.NID_WaitForPose_Navigation_small_navigation\<^bold>?position_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (set_position_Navigation_small_navigation\<^bold>!position_Navigation_small_navigation \<rightarrow> Skip)));; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (cTPrefix (enter_CheckPosition_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_CheckPosition_Navigation_small_navigation))))))))))
                                          	  \<box>
-                                         	  ((n = NID_CheckPosition_Navigation_small_navigation) \<^bold>& ((((position_Navigation_small_navigation < target_Navigation_small_navigation)) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (proposal_out\<^bold>!1 \<rightarrow> Skip)));; (enter_WaitMoveApplied_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitMoveApplied_Navigation_small_navigation))))))))
+                                         	  ((n = NID_CheckPosition_Navigation_small_navigation) \<^bold>& ((((position_Navigation_small_navigation < target_Navigation_small_navigation)) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (proposal_out\<^bold>!1 \<rightarrow> Skip)));; (cTPrefix (enter_WaitMoveApplied_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitMoveApplied_Navigation_small_navigation)))))))))
                                          	  \<box>
-                                         	  ((n = NID_CheckPosition_Navigation_small_navigation) \<^bold>& ((((position_Navigation_small_navigation \<ge> target_Navigation_small_navigation)) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (proposal_out\<^bold>!0 \<rightarrow> Skip)));; (enter_WaitStopApplied_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitStopApplied_Navigation_small_navigation))))))))
+                                         	  ((n = NID_CheckPosition_Navigation_small_navigation) \<^bold>& ((((position_Navigation_small_navigation \<ge> target_Navigation_small_navigation)) \<^bold>& (((internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (proposal_out\<^bold>!0 \<rightarrow> Skip)));; (cTPrefix (enter_WaitStopApplied_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitStopApplied_Navigation_small_navigation)))))))))
                                          	  \<box>
-                                         	  ((n = NID_WaitMoveApplied_Navigation_small_navigation) \<^bold>& (((OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation \<rightarrow> Skip);; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (enter_WaitForPose_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitForPose_Navigation_small_navigation)))))))))
+                                         	  ((n = NID_WaitMoveApplied_Navigation_small_navigation) \<^bold>& (((OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation \<rightarrow> Skip);; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> Skip);; (cTPrefix (enter_WaitForPose_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_WaitForPose_Navigation_small_navigation))))))))))
                                          	  \<box>
-                                         	  ((n = NID_WaitStopApplied_Navigation_small_navigation) \<^bold>& (((OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation \<rightarrow> Skip);; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (targetReached_out \<rightarrow> Skip)));; (enter_f0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_f0_Navigation_small_navigation)))))))))
+                                         	  ((n = NID_WaitStopApplied_Navigation_small_navigation) \<^bold>& (((OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation \<rightarrow> Skip);; ((SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip));; (SSTOP \<triangle> ((exited_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (targetReached_out \<rightarrow> Skip)));; (cTPrefix (enter_f0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_f0_Navigation_small_navigation))))))))))
                                          	  \<box>
-                                         	  (share \<rightarrow> Trans_Navigation_small_navigation(n))) (Trans_Navigation_small_navigation(n)))
+                                         	  (share \<rightarrow> Trans_Navigation_small_navigation(n)))
                                          	  \<box>
-                                         	  (((interrupt_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip)));; (SSTOP \<triangle> (exited_Navigation_small_navigation \<rightarrow> (terminate \<rightarrow> Skip))))
+                                         	  (((interrupt_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip)));; (SSTOP \<triangle> (exited_Navigation_small_navigation \<rightarrow> (cTPrefix (terminate \<rightarrow> Skip)))))
                                          	  \<box>
-                                            	  (terminate \<rightarrow> Skip)))))))))) "
+                                            	  (terminate \<rightarrow> Skip)))
+                                         	  ((Trans_Navigation_small_navigation(n))
+                                         	  \<box>
+                                         	  (((interrupt_Navigation_small_navigation \<rightarrow> (SSTOP \<triangle> (exit_Navigation_small_navigation \<rightarrow> Skip)));; (SSTOP \<triangle> (exited_Navigation_small_navigation \<rightarrow> (cTPrefix (terminate \<rightarrow> Skip)))))
+                                         	  \<box>
+                                            	  (terminate \<rightarrow> Skip))))))))) "
 
 recursive
   Transc_Navigation_small_navigation :: "NIDS_Navigation_small_navigation \<Rightarrow> (mychan, unit) cyphyaction"
@@ -470,7 +487,7 @@ definition ncCoreBehaviour_Navigation_small_navigation :: "(mychan, unit) cyphya
                                                    	  \<lbrace> interrupt_WaitForPose_Navigation_small_navigation \<mapsto> globalpose__in (NID_WaitForPose_Navigation_small_navigation, v) | v. True \<rbrace>)
                                                    	 (composeNodes_Navigation_small_navigation))))
                                                    	  \<lbrakk> \<^bold>0 | \<lbrace> exit_Navigation_small_navigation,enter_WaitForPose_Navigation_small_navigation,internal__Navigation_small_navigation\<^bold>.NID_i0_Navigation_small_navigation,internal__Navigation_small_navigation\<^bold>.NID_CheckPosition_Navigation_small_navigation,setTarget__in\<^bold>.NID_WaitTarget_Navigation_small_navigation,enter_f0_Navigation_small_navigation,globalpose__in\<^bold>.NID_WaitForPose_Navigation_small_navigation,OAApplied__in\<^bold>.NID_WaitMoveApplied_Navigation_small_navigation,interrupt_Navigation_small_navigation,enter_i0_Navigation_small_navigation,enter_WaitStopApplied_Navigation_small_navigation,OAApplied__in\<^bold>.NID_WaitStopApplied_Navigation_small_navigation,share,terminate,enter_WaitMoveApplied_Navigation_small_navigation,exited_Navigation_small_navigation,enter_WaitTarget_Navigation_small_navigation,enter_CheckPosition_Navigation_small_navigation \<rbrace> | \<^bold>0 \<rbrakk>
-                                                   	  (cRename \<lbrace> share \<mapsto> share \<rbrace> ((enter_i0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_i0_Navigation_small_navigation))))) "
+                                                   	  (cRename \<lbrace> share \<mapsto> share \<rbrace> ((cTPrefix (enter_i0_Navigation_small_navigation \<rightarrow> Trans_Navigation_small_navigation(NID_i0_Navigation_small_navigation)))))) "
 
 (* Added the state clocks for the timed semantics (reference manual, Rule 88): a clock is reset by the entered
    event of its state, offers its value on get_CLID_<state>, ends on terminate, and otherwise counts the time
@@ -537,20 +554,20 @@ definition machineBody_Navigation_small_navigation :: "(mychan, unit) cyphyactio
 recursive
   Memory_target_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
-" Memory_target_Navigation_small_navigation(value) = 	(((get_target_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_target_Navigation_small_navigation(value))
+" Memory_target_Navigation_small_navigation(value) = 	(cTPrefix (((get_target_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_target_Navigation_small_navigation(value))
                                                      	  \<box>
                                                      	  ((set_target_Navigation_small_navigation\<^bold>?x__v \<rightarrow> Memory_target_Navigation_small_navigation(x__v))
                                                      	  \<box>
-                                                        	  (terminate \<rightarrow> Skip)))) "
+                                                        	  (terminate \<rightarrow> Skip))))) "
 
 recursive
   Memory_position_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
-" Memory_position_Navigation_small_navigation(value) = 	(((get_position_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_position_Navigation_small_navigation(value))
+" Memory_position_Navigation_small_navigation(value) = 	(cTPrefix (((get_position_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_position_Navigation_small_navigation(value))
                                                        	  \<box>
                                                        	  ((set_position_Navigation_small_navigation\<^bold>?x__v \<rightarrow> Memory_position_Navigation_small_navigation(x__v))
                                                        	  \<box>
-                                                          	  (terminate \<rightarrow> Skip)))) "
+                                                          	  (terminate \<rightarrow> Skip))))) "
 
 (* Changed (0) to (0::nat) because each equation is type-checked on its own; without the type, Memory_target and Memory_position here are not matched to their definitions. *)
 definition varMemory_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
@@ -564,7 +581,7 @@ definition stateful_Navigation_small_navigation :: "(mychan, unit) cyphyaction" 
                                             	  varMemory_Navigation_small_navigation) \<Zhide> \<lbrace> get_position_Navigation_small_navigation,get_target_Navigation_small_navigation,set_position_Navigation_small_navigation,set_target_Navigation_small_navigation \<rbrace>) "
 
 definition sharedVarMemory_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" sharedVarMemory_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
+" sharedVarMemory_Navigation_small_navigation = 	(cTPrefix (terminate \<rightarrow> Skip)) "
 
 (* Changed [ ] to cRename ({} :: mychan \<leftrightarrow> mychan) (the relation type of cRename is not fixed by the process), \<lbrace> shared \<rbrace> to the declared channel set, and \<lbrace> \<rbrace> to ({} :: mychan set). *)
 definition stm_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
