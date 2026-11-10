@@ -1419,7 +1419,7 @@ lemmas [cyphyaction_datatype_unfolds] = cEvolve_cEvolve' cInputPrefix_cInputPref
 
 code_datatype cSkip cAssigns cStop cChaos cAssume cEvolve' cSyncPrefix cEventPrefix cOutputPrefix' cInputPrefix'
   cSeq cGuard cCond "inf :: ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyaction"
-  cExtChoice cParallelAct' cRec' cHide cRename' cInterruptCond cTimeout
+  cExtChoice cParallelAct' cRec' cHide cRename' cInterruptCond cTimeout cInterrupt
 
 section \<open>AST datatype for manipulation in Isabelle\<close>
 
@@ -1432,7 +1432,8 @@ datatype ('e, 's) cyphyast =
 | astParallelAct "'s \<Rightarrow> 's \<Rightarrow> 's \<Rightarrow> 's" "'e set" "('e, 's) cyphyast" "('e, 's) cyphyast"
 | astRec nat "nat \<Rightarrow> ('e, 's) cyphyast" | astHide "('e, 's) cyphyast" "'e set" | astRename "'e \<leftrightarrow> 'e" "('e, 's) cyphyast"
 | astInterruptCond "('e, 's) cyphyast" "'s \<Rightarrow> bool" | astTimeout "('e, 's) cyphyast" "'s \<Rightarrow> real" "('e, 's) cyphyast"
-print_theorems
+| astInterrupt "('e, 's) cyphyast" "('e, 's) cyphyast"
+
 primrec cyphyast_to_cyphyaction :: "('e, 's) cyphyast \<Rightarrow> ('e, 's) cyphyaction" where
   "cyphyast_to_cyphyaction astSkip = cSkip"
 | "cyphyast_to_cyphyaction (astAssigns subst) = cAssigns subst"
@@ -1455,6 +1456,7 @@ primrec cyphyast_to_cyphyaction :: "('e, 's) cyphyast \<Rightarrow> ('e, 's) cyp
 | "cyphyast_to_cyphyaction (astRename renames P) = cRename' renames (cyphyast_to_cyphyaction P)"
 | "cyphyast_to_cyphyaction (astInterruptCond P pred) = cInterruptCond (cyphyast_to_cyphyaction P) pred"
 | "cyphyast_to_cyphyaction (astTimeout P f Q) = cTimeout (cyphyast_to_cyphyaction P) f (cyphyast_to_cyphyaction Q)"
+| "cyphyast_to_cyphyaction (astInterrupt P Q) = cInterrupt (cyphyast_to_cyphyaction P) (cyphyast_to_cyphyaction Q)"
 
 definition cyphyaction_to_cyphyast :: "('e, 's) cyphyaction \<Rightarrow> ('e, 's) cyphyast" where
   [code del]: "cyphyaction_to_cyphyast P = (SOME Q. cyphyast_to_cyphyaction Q = P)"
@@ -1483,6 +1485,7 @@ code_printing
                 | cyphyaction'_to'_cyphyast (CRename (renames, P)) = AstRename (renames, cyphyaction'_to'_cyphyast P)
                 | cyphyaction'_to'_cyphyast (CInterruptCond (P, pred)) = AstInterruptCond (cyphyaction'_to'_cyphyast P, pred)
                 | cyphyaction'_to'_cyphyast (CTimeout (P, n, Q)) = AstTimeout (cyphyaction'_to'_cyphyast P, n, cyphyaction'_to'_cyphyast Q)
+                | cyphyaction'_to'_cyphyast (CInterrupt (P, Q)) = AstInterrupt (cyphyaction'_to'_cyphyast P, cyphyaction'_to'_cyphyast Q)
           in cyphyaction'_to'_cyphyast ast end)"
 
 section \<open>Operational semantics for trace checking\<close>
@@ -1540,6 +1543,7 @@ primrec rec_depth :: "nat \<Rightarrow> ('e, 's) cyphyast \<Rightarrow> nat" whe
 | "rec_depth n (astCond _ P Q) = max (rec_depth n P) (rec_depth n Q)"
 | "rec_depth n (astInterruptCond P _) = rec_depth n P"
 | "rec_depth n (astTimeout P _ Q) = max (rec_depth n P) (rec_depth n Q)"
+| "rec_depth n (astInterrupt P Q) = max (rec_depth n P) (rec_depth n Q)"
 | "rec_depth n (astParallelAct _ _ P Q) = max (rec_depth n P) (rec_depth n Q)"
 | "rec_depth n (astHide P _) = rec_depth n P"
 | "rec_depth n (astRename _ P) = rec_depth n P"
@@ -1625,6 +1629,15 @@ function (sequential) step_cyphyaction :: "real \<Rightarrow> nat \<Rightarrow> 
         map_option
           (map (map_cyphystep_continuation (\<lambda>P'. astInterruptCond P' pred)))
           (step_cyphyaction timestep n t s P))"
+  (* behave as P unless an event happens, then behave as Q if that event could also happen in Q *)
+| "step_cyphyaction timestep n t s (astInterrupt P Q) =
+      (case map_option (List.partition is_EventStep) (step_cyphyaction timestep n t s P) of
+          None \<Rightarrow> None
+        | Some (eventSteps, otherSteps) \<Rightarrow> 
+            if List.null eventSteps then
+              Some otherSteps
+            else
+              map_option ((@) otherSteps o filter is_EventStep) (step_cyphyaction timestep n t s Q))"
   (* behave as Q if the deadline has expires is true, otherwise continue P without, reducing the deadline *)
 | "step_cyphyaction timestep n t s (astTimeout P sn Q) =
       (if fast_equal (sn s) 0 then
@@ -1776,9 +1789,6 @@ termination
   by (relation "measures [\<lambda>(ts, n, t, s, ast). rec_depth n ast, \<lambda>(ts, n, t, s, ast). if ast = astSkip then 0 else 1 + size ast]")
     (auto simp add: mult.commute)
 
-term step_cyphyaction
-value "step_cyphyaction :: \<real> \<Rightarrow> \<nat> \<Rightarrow> nat visibility list \<Rightarrow> nat \<Rightarrow> (nat, nat) cyphyast \<Rightarrow> (nat, nat) cyphystep list option"
-
 section \<open>Predicting the initial events that can be performed by a CyPhyCircus action\<close>
 
 fun merge_known_initials :: "'e set \<Rightarrow> 'e visibility list \<times> (('e \<Rightarrow> bool) \<times> 'e) list \<Rightarrow> 'e visibility list \<times> (('e \<Rightarrow> bool) \<times> 'e) list \<Rightarrow> 'e visibility list" where
@@ -1884,6 +1894,7 @@ function (sequential) initial_events' :: "real \<Rightarrow> nat \<Rightarrow> (
       case initial_events' ts n P s of
           (ks, uks, hs, Some s') \<Rightarrow> initial_events' ts n Q s'
         | (ks, uks, hs, None) \<Rightarrow> (ks, uks, hs, None))"
+| "initial_events' ts n (astInterrupt P Q) s = (initial_events' ts n P s)"
   by (pat_completeness, auto)
 termination
   by (relation "measures [\<lambda>(ts, n, ast, s). rec_depth 1 ast, \<lambda>(ts, n, ast, s). size ast]", auto simp add: mult.commute)
@@ -2361,17 +2372,13 @@ structure String_List_Evaluation = Proof_Data
 val string_list_eval_cookie = (String_List_Evaluation.get, String_List_Evaluation.put, "String_List_Evaluation.put");
 \<close>
 
-
-ML \<open>Typtab.insert (op =)\<close>
 ML \<open>
 structure Chan_Names_Cache = Proof_Data
 (
   type T = string list Typtab.table Unsynchronized.ref;
-  val empty = Unsynchronized.ref Typtab.empty ;
+  val empty : T = Unsynchronized.ref Typtab.empty;
   fun init _ = Unsynchronized.ref Typtab.empty;
 );\<close>
-
-ML \<open>Chan_Names_Cache.get\<close>
 
 definition chan_names :: "('a :: chantyperep) itself \<Rightarrow> String.literal list" where
   "chan_names typ =  map (chan_name) (chantyperep typ)"
