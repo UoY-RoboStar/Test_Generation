@@ -1,5 +1,5 @@
 theory TestGen
-  imports Codegen Tactics
+  imports Codegen tactics
   keywords "generate_tests_rct" :: thy_decl
     and "RoboChart" "Mutants" "RoboWorld" "Iterations"
 begin
@@ -126,7 +126,7 @@ ML \<open>fun parse_testgen_opts ctxt opts = fold (fn ((name, name_pos), (value,
 section \<open>Construction of counterexamples\<close>
 
 lemma search_event_prefix_function [cyphy_search_preparation]:
-  "cEventPrefix e = cOutputPrefix' (\<lambda>_. e)"
+  "cEventPrefix (e :: 'e::default) = cOutputPrefix' (\<lambda>_. e)"
   by (rule ext)
      (simp only: event_prefix_as_output cOutputPrefix_cOutputPrefix' prism_id_def
        refinement_prism_build comp_def id_apply)
