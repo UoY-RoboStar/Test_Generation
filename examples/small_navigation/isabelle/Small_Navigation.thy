@@ -12,6 +12,25 @@ unbundle Circus_Syntax
 
 hide_const (open) sum
 
+(* Added core_nat for the type nat of the RoboChart model: the values 0 to 2, as in the generated CSP
+   (instantiations.csp, nametype core_nat = {0..2}). The renaming relations of the machine are then finite. *)
+enumtype core_nat = N0 | N1 | N2
+
+fun core_nat_rank :: "core_nat \<Rightarrow> nat" where
+  "core_nat_rank N0 = 0" | "core_nat_rank N1 = 1" | "core_nat_rank N2 = 2"
+
+lemma core_nat_rank_inj: "core_nat_rank x = core_nat_rank y \<Longrightarrow> x = y"
+  by (cases x; cases y; simp)
+
+instantiation core_nat :: "{zero, one, linorder}"
+begin
+definition "0 = N0"
+definition "1 = N1"
+definition "x \<le> y \<longleftrightarrow> core_nat_rank x \<le> core_nat_rank y"
+definition "x < y \<longleftrightarrow> core_nat_rank x < core_nat_rank y"
+instance by standard (auto simp add: less_eq_core_nat_def less_core_nat_def dest: core_nat_rank_inj)
+end
+
 subsection \<open> Model \<close>
 
 
@@ -46,31 +65,31 @@ exited_Navigation_small_navigation :: unit
 exit_Navigation_small_navigation :: unit 
 \<comment> \<open>var_channel_stmbd_Navigation_small_navigation\<close>
 
-get_target_Navigation_small_navigation :: "nat"
-set_target_Navigation_small_navigation :: "nat"
-setL_target_Navigation_small_navigation :: "nat"
-setR_target_Navigation_small_navigation :: "nat"
-get_position_Navigation_small_navigation :: "nat"
-set_position_Navigation_small_navigation :: "nat"
-setL_position_Navigation_small_navigation :: "nat"
-setR_position_Navigation_small_navigation :: "nat"
+get_target_Navigation_small_navigation :: "core_nat"
+set_target_Navigation_small_navigation :: "core_nat"
+setL_target_Navigation_small_navigation :: "core_nat"
+setR_target_Navigation_small_navigation :: "core_nat"
+get_position_Navigation_small_navigation :: "core_nat"
+set_position_Navigation_small_navigation :: "core_nat"
+setL_position_Navigation_small_navigation :: "core_nat"
+setR_position_Navigation_small_navigation :: "core_nat"
 \<comment> \<open>event_channel_stmbd_Navigation_small_navigation\<close>
 
-setTarget_in :: "nat"
-setTarget_out :: "nat"
+setTarget_in :: "core_nat"
+setTarget_out :: "core_nat"
 targetReached_in :: unit 
 targetReached_out :: unit 
-globalpose_in :: "nat"
-globalpose_out :: "nat"
+globalpose_in :: "core_nat"
+globalpose_out :: "core_nat"
 OAApplied_in :: unit 
 OAApplied_out :: unit 
-proposal_in :: "nat"
-proposal_out :: "nat"
-setTarget__in :: "(NIDS_Navigation_small_navigation\<times>nat)"
+proposal_in :: "core_nat"
+proposal_out :: "core_nat"
+setTarget__in :: "(NIDS_Navigation_small_navigation\<times>core_nat)"
 targetReached__in :: "NIDS_Navigation_small_navigation"
-globalpose__in :: "(NIDS_Navigation_small_navigation\<times>nat)"
+globalpose__in :: "(NIDS_Navigation_small_navigation\<times>core_nat)"
 OAApplied__in :: "NIDS_Navigation_small_navigation"
-proposal__in :: "(NIDS_Navigation_small_navigation\<times>nat)"
+proposal__in :: "(NIDS_Navigation_small_navigation\<times>core_nat)"
 \<comment> \<open>junction_channel_in_stmbd_i0_Navigation_small_navigation\<close>
 
 enter_i0_Navigation_small_navigation :: unit 
@@ -436,7 +455,7 @@ definition machineBody_Navigation_small_navigation :: "(mychan, unit) cyphyactio
                                                	  Skip) \<Zhide> enteredSS_in_stmbd_Navigation_small_navigation) "
 
 recursive
-  Memory_target_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
+  Memory_target_Navigation_small_navigation :: "core_nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
 " Memory_target_Navigation_small_navigation(value) = 	(((get_target_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_target_Navigation_small_navigation(value))
                                                      	  \<box>
@@ -445,7 +464,7 @@ where
                                                         	  (terminate \<rightarrow> Skip)))) "
 
 recursive
-  Memory_position_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
+  Memory_position_Navigation_small_navigation :: "core_nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
 " Memory_position_Navigation_small_navigation(value) = 	(((get_position_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_position_Navigation_small_navigation(value))
                                                        	  \<box>
@@ -453,11 +472,11 @@ where
                                                        	  \<box>
                                                           	  (terminate \<rightarrow> Skip)))) "
 
-(* Changed (0) to (0::nat) because each equation is type-checked on its own; without the type, Memory_target and Memory_position here are not matched to their definitions. *)
+(* Changed (0) to (0::core_nat) because each equation is type-checked on its own; without the type, Memory_target and Memory_position here are not matched to their definitions. *)
 definition varMemory_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" varMemory_Navigation_small_navigation = 	(Memory_target_Navigation_small_navigation((0::nat))
+" varMemory_Navigation_small_navigation = 	(Memory_target_Navigation_small_navigation((0::core_nat))
                                           	  \<lbrakk> \<^bold>0 | \<lbrace> terminate \<rbrace> | \<^bold>0 \<rbrakk> 
-                                             	  Memory_position_Navigation_small_navigation((0::nat))) "
+                                             	  Memory_position_Navigation_small_navigation((0::core_nat))) "
 
 definition stateful_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " stateful_Navigation_small_navigation = 	((machineBody_Navigation_small_navigation
@@ -467,10 +486,10 @@ definition stateful_Navigation_small_navigation :: "(mychan, unit) cyphyaction" 
 definition sharedVarMemory_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " sharedVarMemory_Navigation_small_navigation = 	(terminate \<rightarrow> Skip) "
 
-(* Changed [ ] to cRename ({} :: mychan \<leftrightarrow> mychan) (the relation type of cRename is not fixed by the process), \<lbrace> shared \<rbrace> to the declared channel set, and \<lbrace> \<rbrace> to ({} :: mychan set). *)
+(* Changed [ ] to cRename ({} :: mychan \<leftrightarrow> mychan) (the relation type of cRename is not fixed by the process), \<lbrace> shared \<rbrace> to \<lbrace> share \<rbrace> (the generated CSP has [| {share__} |] SKIP; reference manual, Rule 25), and \<lbrace> \<rbrace> to ({} :: mychan set). *)
 definition stm_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " stm_Navigation_small_navigation = 	((((cRename ({} :: mychan \<leftrightarrow> mychan) (((stateful_Navigation_small_navigation \<Zhide> \<lbrace> terminate \<rbrace>);; (SSTOP \<triangle> (terminate \<rightarrow> Skip)))))
-                                       	  \<lbrakk> \<^bold>0 | shared_variable_events_in_stmbd_Navigation_small_navigation | \<^bold>0 \<rbrakk>
+                                       	  \<lbrakk> \<^bold>0 | \<lbrace> share \<rbrace> | \<^bold>0 \<rbrakk>
                                        	  Skip)
                                        	  \<lbrakk> \<^bold>0 | \<lbrace> terminate \<rbrace> | \<^bold>0 \<rbrakk>
                                        	  sharedVarMemory_Navigation_small_navigation) \<Zhide> ({} :: mychan set)) "

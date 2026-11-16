@@ -275,7 +275,7 @@ definition machineBody_Navigation_small_navigation :: "(mychan, unit) cyphyactio
                                                	  Skip) \<Zhide> enteredSS_in_stmbd_Navigation_small_navigation) "
 
 recursive
-  Memory_target_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
+  Memory_target_Navigation_small_navigation :: "core_nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
 " Memory_target_Navigation_small_navigation(value) = 	(((get_target_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_target_Navigation_small_navigation(value))
                                                      	  \<box>
@@ -284,7 +284,7 @@ where
                                                         	  (terminate \<rightarrow> Skip)))) "
 
 recursive
-  Memory_position_Navigation_small_navigation :: "nat \<Rightarrow> (mychan, unit) cyphyaction"
+  Memory_position_Navigation_small_navigation :: "core_nat \<Rightarrow> (mychan, unit) cyphyaction"
 where
 " Memory_position_Navigation_small_navigation(value) = 	(((get_position_Navigation_small_navigation\<^bold>!value \<rightarrow> Memory_position_Navigation_small_navigation(value))
                                                        	  \<box>
@@ -293,9 +293,9 @@ where
                                                           	  (terminate \<rightarrow> Skip)))) "
 
 definition varMemory_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
-" varMemory_Navigation_small_navigation = 	(Memory_target_Navigation_small_navigation((0::nat))
+" varMemory_Navigation_small_navigation = 	(Memory_target_Navigation_small_navigation((0::core_nat))
                                           	  \<lbrakk> \<^bold>0 | \<lbrace> terminate \<rbrace> | \<^bold>0 \<rbrakk> 
-                                             	  Memory_position_Navigation_small_navigation((0::nat))) "
+                                             	  Memory_position_Navigation_small_navigation((0::core_nat))) "
 
 definition stateful_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " stateful_Navigation_small_navigation = 	((machineBody_Navigation_small_navigation
@@ -307,7 +307,7 @@ definition sharedVarMemory_Navigation_small_navigation :: "(mychan, unit) cyphya
 
 definition stm_Navigation_small_navigation :: "(mychan, unit) cyphyaction" where
 " stm_Navigation_small_navigation = 	((((cRename ({} :: mychan \<leftrightarrow> mychan) (((stateful_Navigation_small_navigation \<Zhide> \<lbrace> terminate \<rbrace>);; (SSTOP \<triangle> (terminate \<rightarrow> Skip)))))
-                                       	  \<lbrakk> \<^bold>0 | shared_variable_events_in_stmbd_Navigation_small_navigation | \<^bold>0 \<rbrakk>
+                                       	  \<lbrakk> \<^bold>0 | \<lbrace> share \<rbrace> | \<^bold>0 \<rbrakk>
                                        	  Skip)
                                        	  \<lbrakk> \<^bold>0 | \<lbrace> terminate \<rbrace> | \<^bold>0 \<rbrakk>
                                        	  sharedVarMemory_Navigation_small_navigation) \<Zhide> ({} :: mychan set)) "

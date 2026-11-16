@@ -154,6 +154,10 @@ declare
   Small_Navigation_Mutant.Navigation.Memory_target_Navigation_small_navigation_def [rct_defs]
   Small_Navigation_Mutant.Navigation.Memory_position_Navigation_small_navigation_def [rct_defs]
 
+declare
+  Small_Navigation.Navigation.enteredSS_in_stmbd_Navigation_small_navigation_def [rct_defs]
+  Small_Navigation.Navigation.renameTriggerEvents_Navigation_small_navigation_def [rct_defs]
+
 subsection \<open>Check refinement of model against itself\<close>
 
 text \<open>rct_refine proves that the original model refines itself.\<close>
@@ -190,12 +194,16 @@ ML_val \<open>
       (case result of
         NONE => "refining mutant"
       | SOME NONE => "failed mutant"
-      | SOME (SOME _) => "trace generated"))
+      | SOME (SOME trace) => "trace generated: " ^ commas (map (Syntax.string_of_term \<^context>) trace)))
   end
 \<close>
 
-(* TODO (James): the candidate search does not run on this pair. The simplified models
-   still contain hiding and interrupt, which the search does not support. *)
+text \<open>rct_refine moves the hidings of both processes to the top (cyphy_factor_hiding) and rewrites the
+  interrupts into recursions. The result is the trace setTarget__in (NID_WaitTarget, 0),
+  globalpose__in (NID_WaitForPose, 0), proposal_out 1. The search returns its first two events under the
+  names that they have before renameTriggerEvents.\<close>
 
-(* TODO (James): ref_by is (\<ge>), so internal choice is sup, but Codegen.thy uses inf. *)
+(* TODO: the rule for astRename of step_cyphyaction in Codegen.thy. The trace above has the events before the
+   renaming. With OAApplied_in and targetReached_in both renamed to OAApplied_out, the trace OAApplied_in is
+   found and OAApplied_out is not. *)
 end
