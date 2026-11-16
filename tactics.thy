@@ -41,7 +41,7 @@ named_theorems cyphy_hiding_outward
 
 lemmas [cyphy_hiding_outward] = cHide_factor_event cHide_factor_visible_event
   cHide_factor_mprefix cHide_factor_internal_choice
-  cHide_factor_indexed_internal_choice cHide_factor_seq
+  cHide_factor_seq
   cHide_factor_parallelAct_unit ax_hide_twice
 
 method cyphy_mono =
@@ -100,7 +100,7 @@ text \<open>rct_refine unfolds the definitions declared rct_defs and applies cyp
 method rct_refine =
   (((simp only: rct_defs)?, cyphy_factor_hiding),
   (solves \<open>rct_refine_core\<close> |
-   solves \<open>auto intro!: cyphy_refinement intro: cyphy_joint_lfp_mono cyphy_joint_gfp_mono
+   solves \<open>auto intro!: cyphy_refinement intro: cyphy_joint_lfp_mono
      simp add: rct_defs ax_executable_step_laws cyphy_normalisation
        ref_by_cyphyaction_def\<close> | rct_normalise))
 
