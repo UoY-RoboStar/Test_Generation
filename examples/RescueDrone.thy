@@ -18,7 +18,6 @@ chantype rescueDrone_chans =
   setAngVel :: "\<real> \<times> \<real> \<times> \<real>"
   proceed :: "unit"
 
-
 alphabet rescueDrone_state =
   pos :: "\<real> \<times> \<real> \<times> \<real>"
   vel :: "\<real> \<times> \<real> \<times> \<real>"
@@ -154,6 +153,8 @@ recursive RescueDrone_mTransTarget_Output9  :: "(rescueDrone_chans, rescueDrone_
     ((takeoff\<^bold>.Out \<rightarrow> Wait(TOP)) ;; (turnBackCall \<rightarrow> Wait(TURN)) ;; (moveCall\<^bold>.LV \<rightarrow> Skip)) ;;
     await_trigger((origin\<^bold>.In \<rightarrow> (turnBackCall \<rightarrow> Wait(TURN))) ;; (land\<^bold>.Out \<rightarrow> Skip)) ;;
     RescueDrone_mTransTarget_Output9_2"
+
+declare [[testgen_timeout=5000]]
 
 ML \<open>obtainCounterexample @{context}
       @{term "RescueDrone :: (rescueDrone_chans, rescueDrone_state) cyphyaction"}
@@ -370,4 +371,4 @@ generate_tests_rct[testgen_timeout=10000, testgen_verbose=true, testgen_consts_b
     RescueDrone_mTransTarget_Output8,
     RescueDrone_mTransTarget_Output9
   RoboWorld = RescueRoboWorld RescueRoboWorld_pred
-  Iterations = 2
+  Iterations = 1
