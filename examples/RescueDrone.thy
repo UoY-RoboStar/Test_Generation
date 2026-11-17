@@ -1,5 +1,5 @@
 theory RescueDrone
-  imports "../TestGen" "HOL-Library.Code_Target_Int"
+  imports "Test_Generation.TestGen" "HOL-Library.Code_Target_Int"
 begin
 
 datatype InOut = In | Out
@@ -336,6 +336,8 @@ definition Mapping :: "(rescueDrone_chans, rescueDrone_state) cyphyaction" where
     (takeoff_OutputEventMapping
       \<lbrakk> \<^bold>0 | \<lbrace>proceed\<rbrace> | \<^bold>0 \<rbrakk>
     land_OutputEventMapping))"
+
+unbundle no UTP_Syntax
 
 
 definition RescueRoboWorld :: "arena \<Rightarrow> (rescueDrone_chans, rescueDrone_state) cyphyaction" where
