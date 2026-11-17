@@ -1629,15 +1629,21 @@ function (sequential) step_cyphyaction :: "real \<Rightarrow> nat \<Rightarrow> 
         map_option
           (map (map_cyphystep_continuation (\<lambda>P'. astInterruptCond P' pred)))
           (step_cyphyaction timestep n t s P))"
-  (* behave as P unless an event happens, then behave as Q if that event could also happen in Q *)
+  (* offer a choice with Q at each point in P, a step in Q resolves the interrupt, but steps in P don't *)
 | "step_cyphyaction timestep n t s (astInterrupt P Q) =
-      (case map_option (List.partition is_EventStep) (step_cyphyaction timestep n t s P) of
-          None \<Rightarrow> None
-        | Some (eventSteps, otherSteps) \<Rightarrow> 
-            if List.null eventSteps then
-              Some otherSteps
-            else
-              map_option ((@) otherSteps o filter is_EventStep) (step_cyphyaction timestep n t s Q))"
+      (case (step_cyphyaction timestep n t s P, step_cyphyaction timestep n t s Q) of
+          (Some xs, Some ys) \<Rightarrow>
+            \<comment> \<open>a timestep doesn't resolve the interrupt\<close>
+            Some (case (List.partition is_Timestep xs, List.partition is_Timestep ys) of
+              ((xs_ts, xs), (ys_ts, ys)) \<Rightarrow>
+                \<comment> \<open>steps in P don't resolve the interrupt\<close>
+               (map make_strict_internal (map (map_cyphystep_continuation (\<lambda> P'. astInterrupt P' Q)) xs @ ys))
+                \<comment> \<open>merge timesteps\<close>
+                @ (map
+                  (\<lambda> (x, y). case (x, y) of (Timestep s' strict1 P', Timestep _ strict2 Q') \<Rightarrow>
+                    Timestep s' strict1 (astInterrupt P' Q'))
+                  (List.product xs_ts ys_ts)))
+        | _ \<Rightarrow> None \<comment> \<open>if either side diverges, the whole thing does\<close>)"
   (* behave as Q if the deadline has expires is true, otherwise continue P without, reducing the deadline *)
 | "step_cyphyaction timestep n t s (astTimeout P sn Q) =
       (if fast_equal (sn s) 0 then
