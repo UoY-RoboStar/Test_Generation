@@ -1,0 +1,61 @@
+package small_navigation
+
+interface MissionEvents {
+    event setTarget : nat
+    event targetReached
+}
+
+interface NavigationInputs {
+    event globalpose : nat
+}
+
+interface NavigationCommands {
+    event proposal : nat
+    event OAApplied
+}
+
+stm Navigation {
+    uses MissionEvents
+    uses NavigationInputs
+    uses NavigationCommands
+
+    var target : nat = 0
+    var position : nat = 0
+
+    initial i0
+    state WaitTarget { }
+    state WaitForPose { }
+    junction CheckPosition
+    state WaitMoveApplied { }
+    state WaitStopApplied { }
+    final f0
+
+    transition initialise { from i0 to WaitTarget }
+    transition mission {
+        from WaitTarget to WaitForPose
+        trigger setTarget?target
+    }
+    transition samplePosition {
+        from WaitForPose to CheckPosition
+        trigger globalpose?position
+    }
+    transition move {
+        from CheckPosition to WaitMoveApplied
+        condition position < target
+        action proposal!1
+    }
+    transition stop {
+        from CheckPosition to WaitStopApplied
+        condition position >= target
+        action proposal!0
+    }
+    transition moveApplied {
+        from WaitMoveApplied to WaitForPose
+        trigger OAApplied
+    }
+    transition stopApplied {
+        from WaitStopApplied to f0
+        trigger OAApplied
+        action targetReached
+    }
+}
