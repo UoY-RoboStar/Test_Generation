@@ -204,6 +204,7 @@ text \<open>rct_refine moves the hidings of both processes to the top (cyphy_fac
   names that they have before renameTriggerEvents.\<close>
 
 (* TODO: the rule for astRename of step_cyphyaction in Codegen.thy. The trace above has the events before the
-   renaming. With OAApplied_in and targetReached_in both renamed to OAApplied_out, the trace OAApplied_in is
-   found and OAApplied_out is not. *)
+   renaming. renameTriggerEvents renames setTarget__in (n, v) to setTarget_in v for every node n, so several
+   events are renamed to setTarget_in 0. The issue is that the rule looks for the events renamed to an event
+   only if there is exactly one (can_select); otherwise it passes the event to the process as it is. *)
 end

@@ -51,14 +51,14 @@ method cyphy_mono =
 text \<open>cyphy_factor_hiding moves the hidings of a process outward: cyphy_hide_out takes one step, and
   cyphy_hide_side proves the conditions of the law of that step.\<close>
 
-lemmas cyphy_channel_unfolding = csinsert_def csbasic_def chan_defs ctor_prism_def refinement_prism_build
+lemmas cyphy_channel_unfolding = csinsert_def csbasic_def ctor_prism_def refinement_prism_build
   evsimple_def chinst1_def chinstn_def
 
 method cyphy_hide_rec_step =
   ((simp only: SEXP_def)?,
-   ((subst cInputPrefix_mprefix_UNIV, solves \<open>simp add: inj_def cyphy_channel_unfolding\<close>)+)?,
+   ((subst cInputPrefix_mprefix_UNIV, solves \<open>simp add: inj_def cyphy_channel_unfolding chan_defs\<close>)+)?,
    hide_prefix_choice forms: SEXP_def ax_cSync_event_prefix evsimple_chinst1 ax_cOutput_event_prefix
-     disjoint: cyphy_channel_unfolding hidden: cyphy_channel_unfolding inv_f_f inj_def)
+     disjoint: cyphy_channel_unfolding chan_defs hidden: cyphy_channel_unfolding chan_defs inv_f_f inj_def)
 
 method cyphy_hide_side =
   (solves \<open>match conclusion in
@@ -73,11 +73,11 @@ method cyphy_hide_side =
    \<bar> "cHide P H = P" for P H \<Rightarrow>
        \<open>(simp only: ax_cSync_event_prefix)?, rule hide_event_skip_id, cyphy_hide_side\<close>
    \<bar> "A \<inter> B = {}" for A B \<Rightarrow>
-       \<open>auto simp add: cyphy_channel_unfolding rncollect_def rnsingle_def rninsert_def\<close>
+       \<open>auto simp add: cyphy_channel_unfolding chan_defs rncollect_def rnsingle_def rninsert_def\<close>
    \<bar> "single_valued R" for R \<Rightarrow>
-       \<open>auto simp add: cyphy_channel_unfolding rncollect_def rnsingle_def rninsert_def single_valued_def\<close>
-   \<bar> "x \<notin> A" for x A \<Rightarrow> \<open>auto simp add: cyphy_channel_unfolding\<close>
-   \<bar> "x \<noteq> y" for x y \<Rightarrow> \<open>auto simp add: cyphy_channel_unfolding\<close>\<close>)
+       \<open>auto simp add: cyphy_channel_unfolding chan_defs rncollect_def rnsingle_def rninsert_def single_valued_def\<close>
+   \<bar> "x \<notin> A" for x A \<Rightarrow> \<open>auto simp add: cyphy_channel_unfolding chan_defs\<close>
+   \<bar> "x \<noteq> y" for x y \<Rightarrow> \<open>auto simp add: cyphy_channel_unfolding chan_defs\<close>\<close>)
 
 method cyphy_hide_out =
   ( (subst ax_hide_empty)
