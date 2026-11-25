@@ -1784,12 +1784,13 @@ function (sequential) step_cyphyaction :: "real \<Rightarrow> nat \<Rightarrow> 
   (* a visible event is reverse-renamed and then renamed back in the result *)
 | "step_cyphyaction timestep n (Visible te # t) s (astRename rel P)
       = map_option (map (map_cyphystep_continuation (astRename rel))) 
-          (if can_select (\<lambda>p. fast_equal te (snd p)) rel then
-            fold (\<lambda>te'. combine_options (@) (step_cyphyaction timestep n (Visible te' # t) s P))
-              (rapply_alist (the (set_to_list rel)) te)
-              None
-        else
-          step_cyphyaction timestep n (Visible te # t) s P)"
+          (let alist = the (set_to_list rel);
+               source_events = rapply_alist alist te @
+                 (if \<not> list_ex (\<lambda> (e, _). fast_equal te e) alist then [te] else [])
+           in if List.null source_events then
+                map_option (filter (Not \<circ> is_EventStep)) (step_cyphyaction timestep n (Visible te # t) s P)
+              else
+                fold (\<lambda>te'. combine_options (@) (step_cyphyaction timestep n (Visible te' # t) s P)) source_events None)"
   by (pat_completeness, auto)
 termination
   by (relation "measures [\<lambda>(ts, n, t, s, ast). rec_depth n ast, \<lambda>(ts, n, t, s, ast). if ast = astSkip then 0 else 1 + size ast]")
